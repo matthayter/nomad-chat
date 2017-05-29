@@ -51,16 +51,16 @@
                 return;
             $('button[name="open"]').attr('disabled', true);
             $('button[name="close"],button[name="send"],button[name="rename"]').attr('disabled', false);
-            socket = new WebSocket('ws://localhost:3000/r');
+            socket = new WebSocket('ws://' + location.host + '/r');
             socket.onopen = function() {
                 console.log('open');
             };
             socket.onmessage = function(e) {
-                var el = $('#output');
                 var m = decodeURIComponent(e.data);
-                el.val(m + '\n' + el.val());
+                post(m);
             };
             socket.onclose = function(e) {
+                console.log('onclose');
                 $('button[name="open"]').attr('disabled', false);
             };
         }
@@ -78,6 +78,10 @@
             $('button[name="open"]').attr('disabled', false);
             socket.close();
             socket = null;
+        }
+        function post(msg) {
+            var el = $('#output');
+            el.val(msg + '\n' + el.val());
         }
     </script>
 
