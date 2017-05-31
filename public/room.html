@@ -51,7 +51,7 @@
                 return;
             $('button[name="open"]').attr('disabled', true);
             $('button[name="close"],button[name="send"],button[name="rename"]').attr('disabled', false);
-            socket = new WebSocket('ws://' + location.host + '/r');
+            socket = new WebSocket('ws://' + location.host + location.pathname);
             socket.onopen = function() {
                 console.log('open');
             };
