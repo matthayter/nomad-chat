@@ -3,6 +3,7 @@
 module Main where
 
 import Lib
+import RoomsService
 
 import qualified Web.Scotty as Scotty;
     import       Web.Scotty (scotty, param, get, html, middleware, setHeader, file)
@@ -27,12 +28,9 @@ import qualified Control.Concurrent.Chan as Chan;
 
 default (T.Text)
 
-type Rooms = [(T.Text, Chan T.Text)]
-type RoomProvider = T.Text -> IO (Chan T.Text)
-
 main :: IO ()
 main = do
-    rooms <- newMVar ([] :: Rooms)
+    rooms <- newRoomsService
     let roomProvider = getCreateRoom rooms
     scotty 3000 $ do
         get "/" $ do
@@ -61,12 +59,16 @@ logHostMiddleware nextApp req res = do
     putStrLn $ "New connection from host: " ++ (show $ WAI.remoteHost req)
     nextApp req res
 
+findRoomName :: WAI.Request -> Maybe T.Text
+findRoomName req = T.stripPrefix "/r/" path
+    where
+        header = WSWai.getRequestHead req
+        path = T.Encoding.decodeUtf8 $ WS.requestPath header
+
 chatMiddleware :: RoomProvider -> Application -> WAI.Request -> (WAI.Response -> IO WAI.ResponseReceived) -> IO WAI.ResponseReceived
 chatMiddleware getRoom nextApp req res =
     let 
-        header = WSWai.getRequestHead req
-        path = T.Encoding.decodeUtf8 $ WS.requestPath header
-        mRoomName = T.stripPrefix "/r/" path
+        mRoomName = findRoomName req
         ioMChan = sequence $ getRoom `fmap` mRoomName
         wsHandler = \chan -> WSWai.websocketsOr WS.defaultConnectionOptions (roomWSServerApp chan) nextApp req res
     in
@@ -85,17 +87,6 @@ chatMiddleware getRoom nextApp req res =
 -- handleRoom :: T.Text -> IO WAI.ResponseReceived
 -- handleRoom roomName
 
-getCreateRoom :: MVar Rooms -> T.Text -> IO (Chan T.Text)
-getCreateRoom roomsRef roomName = do
-    mRoomChan <- (lookup roomName) `fmap` readMVar roomsRef
-    case mRoomChan of
-        Just chan -> return chan
-        Nothing -> do
-            modifyMVar roomsRef addRoom
-    where
-        addRoom rooms = do
-            newChan <- Chan.newChan
-            return ((roomName, newChan) : rooms, newChan)
 
 -- Block on both msgs from the WS connection, and on msgs from the room 'channel'...
 roomWSServerApp :: Chan T.Text -> WS.PendingConnection -> IO ()
