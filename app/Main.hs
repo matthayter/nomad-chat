@@ -4,6 +4,7 @@ module Main where
 
 import Lib
 import RoomsService
+import MiddlewareUtil
 
 import qualified Web.Scotty as Scotty;
     import       Web.Scotty (scotty, param, get, html, middleware, setHeader, file)
@@ -31,7 +32,7 @@ default (T.Text)
 main :: IO ()
 main = do
     rooms <- newRoomsService
-    let roomProvider = getCreateRoom rooms
+    let roomLookup = lookupRoom rooms
     scotty 3000 $ do
         get "/" $ do
             setHeader "Content-Type" "text/html; charset=utf-8"
@@ -41,23 +42,9 @@ main = do
             file $ "public" </> "room.html"
         middleware $ staticPolicy $ hasPrefix "public/"
         middleware logHostMiddleware
-        middleware $ chatMiddleware roomProvider
+        wsMiddleware $ require findRoomName (chatMiddleware roomLookup)
 
-httpget :: Scotty.RoutePattern -> Scotty.ActionM () -> Scotty.ScottyM ()
-httpget route action =
-    -- Ignore ws requests. Ideally, scotty should allow specification of 'http-only-get'
-    get route $ do
-        req <- Scotty.request
-        when (WSWai.isWebSocketsReq req) (void Scotty.next)
-        action
 
-wsMiddleware :: WS.ServerApp -> Scotty.ScottyM ()
-wsMiddleware serverApp = middleware $ WSWai.websocketsOr WS.defaultConnectionOptions serverApp
-
-logHostMiddleware :: Application -> Application
-logHostMiddleware nextApp req res = do
-    putStrLn $ "New connection from host: " ++ (show $ WAI.remoteHost req)
-    nextApp req res
 
 findRoomName :: WAI.Request -> Maybe T.Text
 findRoomName req = T.stripPrefix "/r/" path
@@ -65,28 +52,14 @@ findRoomName req = T.stripPrefix "/r/" path
         header = WSWai.getRequestHead req
         path = T.Encoding.decodeUtf8 $ WS.requestPath header
 
-chatMiddleware :: RoomProvider -> Application -> WAI.Request -> (WAI.Response -> IO WAI.ResponseReceived) -> IO WAI.ResponseReceived
-chatMiddleware getRoom nextApp req res =
+chatMiddleware :: RoomLookup -> T.Text -> Application -> WAI.Request -> (WAI.Response -> IO WAI.ResponseReceived) -> IO WAI.ResponseReceived
+chatMiddleware getRoom roomName nextApp req res =
     let 
-        mRoomName = findRoomName req
-        ioMChan = sequence $ getRoom `fmap` mRoomName
         wsHandler = \chan -> WSWai.websocketsOr WS.defaultConnectionOptions (roomWSServerApp chan) nextApp req res
-    in
-        if (WSWai.isWebSocketsReq req) then do
-            putStrLn "New WS connection"
-            sequence $ T.IO.putStrLn `fmap` mRoomName
-            mChan <- ioMChan
-            maybe (nextApp req res) (wsHandler) mChan
-        else
-            nextApp req res
-        -- Check the path, grab the room name
-        -- maybe (nextApp req res) (getCreateRoom rooms)
-            
-        -- nextApp req res
-
--- handleRoom :: T.Text -> IO WAI.ResponseReceived
--- handleRoom roomName
-
+    in do
+        T.IO.putStrLn $ T.append "New WS connection to room: " roomName
+        mChan <- getRoom roomName
+        maybe (nextApp req res) wsHandler mChan
 
 -- Block on both msgs from the WS connection, and on msgs from the room 'channel'...
 roomWSServerApp :: Chan T.Text -> WS.PendingConnection -> IO ()
