@@ -19,6 +19,7 @@ library
                      , RoomsService
                      , MiddlewareUtil
   build-depends:       base >= 4.7 && < 5
+                     , random
                      , text
                      , scotty
                      , websockets
