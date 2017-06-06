@@ -45,13 +45,12 @@ main = do
             Scotty.redirect $ TL.fromStrict $ T.append "/r/" roomName
         httpget "/r/:roomName" $ do
             roomName <- param "roomName"
-            mRoom <- liftAndCatchIO $ roomLookup roomName
+            mRoom <- liftAndCatchIO $ lookupRoom rooms roomName
             when (isNothing mRoom) Scotty.next
             setHeader "Content-Type" "text/html; charset=utf-8"
             file $ "public" </> "room.html"
+        wsMiddleware $ require findRoomName (chatMiddleware (subscribeToRoom rooms))
         middleware $ staticPolicy $ hasPrefix "public/"
-        middleware logHostMiddleware
-        wsMiddleware $ require findRoomName (chatMiddleware roomLookup)
 
 findRoomName :: WAI.Request -> Maybe T.Text
 findRoomName req = T.stripPrefix "/r/" path
@@ -60,22 +59,20 @@ findRoomName req = T.stripPrefix "/r/" path
         path = T.Encoding.decodeUtf8 $ WS.requestPath header
 
 chatMiddleware :: RoomLookup -> T.Text -> Application -> WAI.Request -> (WAI.Response -> IO WAI.ResponseReceived) -> IO WAI.ResponseReceived
-chatMiddleware getRoom roomName nextApp req res =
+chatMiddleware subscribeRoom roomName nextApp req res =
     let 
         wsHandler = \chan -> WSWai.websocketsOr WS.defaultConnectionOptions (roomWSServerApp chan) nextApp req res
     in do
         T.IO.putStrLn $ T.append "New WS connection to room: " roomName
-        mChan <- getRoom roomName
+        mChan <- subscribeRoom roomName
         case mChan of
             Just chan -> wsHandler chan
             Nothing -> nextApp req res
 
 -- Block on both msgs from the WS connection, and on msgs from the room 'channel'...
 roomWSServerApp :: Chan T.Text -> WS.PendingConnection -> IO ()
-roomWSServerApp chan p = do
-    putStrLn "Duplicating room channel."
+roomWSServerApp personalChan p = do
     conn <- WS.acceptRequest p
-    personalChan <- Chan.dupChan chan
     -- Heartbeat. Thread dies silently when connections dies / is closed.
     WS.forkPingThread conn 2
     -- Push new messages to the client
