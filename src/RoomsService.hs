@@ -2,36 +2,47 @@
 
 module RoomsService (
       RoomLookup
+    , RoomsService
     , newRoomsService
-    , lookupRoom
-    , subscribeToRoom
+    , roomExists
+    , withRoom
     , createRandomRoom
 ) where
 
-
-import qualified System.Random as R
-
-import qualified Data.Text as T
-import           Data.Tuple (swap)
-import           Data.Char (chr)
-import           Control.Concurrent (ThreadId, forkIO, killThread)
+-- Unqualified
+import           Data.List
+import           Data.Maybe
 import           Control.Concurrent.MVar
+
+import           Control.Concurrent (ThreadId, threadDelay, forkIO, killThread)
 import qualified Control.Concurrent.Chan as Chan;
     import       Control.Concurrent.Chan (Chan)
+import qualified Control.Exception as Ex
 import           Control.Monad
+import           Data.Char (chr)
+import qualified Data.Text as T
+import qualified Data.Time as Time
+import qualified Data.Time.Format as Time
+import           Data.Time (UTCTime, NominalDiffTime)
+import           Data.Tuple (swap)
+import qualified System.Random as R
 
 data Room = Room {
     getDumpThread :: ThreadId,
     getChan :: Chan T.Text,
-    getSubs :: Int
+    getSubs :: Int,
+    lastActive :: UTCTime
 }
 type RoomLookup = T.Text -> IO (Maybe (Chan T.Text))
 type RoomsService = (MVar [(T.Text, Room)], MVar String)
 
 instance Show Room where
-    show room = "Room {" ++ (show $ getSubs room) ++ " subs}"
+    show room = "Room {" ++ (show $ getSubs room) ++ " subs; activeAt " ++ (Time.formatTime Time.defaultTimeLocale Time.rfc822DateFormat (lastActive room)) ++ "}"
 
 default (T.Text)
+
+roomMaxIdle :: NominalDiffTime
+roomMaxIdle = fromInteger (180) -- Three minutes
 
 newRoomsService :: IO RoomsService
 newRoomsService = do
@@ -39,7 +50,12 @@ newRoomsService = do
     randseed <- R.getStdGen
     let infString = randomAlphanumeric randseed
     mvarInfString <- newMVar infString
-    return (rooms, mvarInfString)
+    let rs = (rooms, mvarInfString)
+    -- Fork a thread that closes old rooms after a time
+    forkIO $ forever $ do
+        threadDelay 10000000 -- Ten seconds
+        closeOldRooms rs
+    return rs
 
 randomAlphanumeric :: R.RandomGen g => g -> String
 randomAlphanumeric g = (chr . toAlphanumeric) `fmap` R.randomRs (0, 61) g
@@ -57,15 +73,35 @@ randomRoomName infString = do
 subscribeToRoom :: RoomsService -> T.Text -> IO (Maybe (Chan T.Text))
 subscribeToRoom rs@(roomsRef, _) roomName = do
     rooms <- takeMVar $ roomsRef
-    let (mRoom, newRooms) = lookupReplaceInList roomName bumpSubs rooms
+    currTime <- Time.getCurrentTime
+    let (mRoom, newRooms) = lookupReplaceInList roomName (bumpSubs currTime 1) rooms
     putStrLn "New Subscription. Rooms:"
     putStrLn $ show newRooms
     putMVar roomsRef newRooms
     -- Duplicate the channel to return as the subscriber's interface with the room.
     sequence $ freshChan `fmap` mRoom
     where
-        bumpSubs room = room {getSubs = (getSubs room) + 1}
         freshChan room = Chan.dupChan $ getChan room
+
+unsubscribeFromRoom :: RoomsService -> T.Text -> IO ()
+unsubscribeFromRoom rs@(roomsRef, _) roomName = do
+    rooms <- takeMVar $ roomsRef
+    currTime <- Time.getCurrentTime
+    let (_, newRooms) = lookupReplaceInList roomName (bumpSubs currTime (-1)) rooms
+    void $ putMVar roomsRef newRooms
+    putStrLn "End subscription. Rooms:"
+    putStrLn $ show newRooms
+
+withRoom :: RoomsService -> T.Text -> (Chan T.Text -> IO a) -> IO a -> IO a
+withRoom rs roomName f noRoom = do
+    mChan <- subscribeToRoom rs roomName
+    case mChan of
+        Just chan ->
+            Ex.finally (f chan) (unsubscribeFromRoom rs roomName)
+        Nothing -> noRoom
+
+bumpSubs :: UTCTime -> Int -> Room -> Room
+bumpSubs currTime n room = room {getSubs = (getSubs room) + n, lastActive = currTime}
 
 lookupReplaceInList :: Eq a => a -> (b -> b) -> [(a,b)] -> (Maybe b, [(a,b)])
 lookupReplaceInList _ _ [] = (Nothing, [])
@@ -87,6 +123,9 @@ lookupRoom' :: RoomsService -> T.Text -> IO (Maybe Room)
 lookupRoom' (roomsRef, _) roomName = do
     rooms <- readMVar roomsRef
     return $ lookup roomName rooms
+
+roomExists :: RoomsService -> T.Text -> IO Bool
+roomExists rs roomName = (not . isNothing) `fmap` lookupRoom' rs roomName
 
 createRandomRoom :: RoomsService -> IO (T.Text, Chan T.Text)
 createRandomRoom rs@(roomsRef, randStrRef) = do
@@ -111,7 +150,28 @@ createRoom (roomsRef, _) roomName = do
             newChan <- Chan.newChan
             -- Constantly dump the contents of the new channel
             threadId <- forkIO $ forever $ Chan.readChan newChan
-            return ((roomName, (Room threadId newChan 0)) : rooms, newChan)
+            currentTime <- Time.getCurrentTime
+            return ((roomName, (Room threadId newChan 0 currentTime)) : rooms, newChan)
+
+closeOldRooms :: RoomsService -> IO ()
+closeOldRooms rs@(roomsRef, _) = do
+    rooms <- takeMVar roomsRef
+    currTime <- Time.getCurrentTime
+    let (freshRooms, oldRooms) = partitionFreshRooms rooms currTime roomMaxIdle
+    putMVar roomsRef freshRooms
+    void $ sequence $ endRoom `fmap` oldRooms
+    where
+        endRoom (roomName, room) = do
+            putStrLn $ "Closing room: " ++ (show (roomName, room))
+            killThread $ getDumpThread room
+
+
+partitionFreshRooms :: [(T.Text, Room)] -> UTCTime -> Time.NominalDiffTime -> ([(T.Text, Room)], [(T.Text, Room)])
+partitionFreshRooms rooms currTime maxIdle =
+    partition isFresh rooms
+    where
+        roomIdle room = Time.diffUTCTime currTime (lastActive room)
+        isFresh (roomName, room) = (getSubs room > 0) || (roomIdle room < maxIdle)
 
 getCreateRoom :: RoomsService -> T.Text -> IO (Chan T.Text)
 getCreateRoom rs@(roomsRef, _) roomName = do

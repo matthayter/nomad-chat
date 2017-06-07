@@ -12,8 +12,8 @@ import qualified Network.Wai as WAI;
     import       Network.Wai (Application, Middleware)
 import Control.Monad
 
-require :: (WAI.Request -> Maybe a) -> (a -> Middleware) -> Middleware
-require condition dependentMiddleware nextApp req res =
+requires :: (a -> Middleware) -> (WAI.Request -> Maybe a) -> Middleware
+requires dependentMiddleware condition nextApp req res =
     let
         resultMware = maybeMiddleware $ liftM dependentMiddleware (condition req)
     in

@@ -34,7 +34,6 @@ default (T.Text)
 main :: IO ()
 main = do
     rooms <- newRoomsService
-    let roomLookup = lookupRoom rooms
     scotty 3000 $ do
         httpget "/" $ do
             setHeader "Content-Type" "text/html; charset=utf-8"
@@ -45,11 +44,11 @@ main = do
             Scotty.redirect $ TL.fromStrict $ T.append "/r/" roomName
         httpget "/r/:roomName" $ do
             roomName <- param "roomName"
-            mRoom <- liftAndCatchIO $ lookupRoom rooms roomName
-            when (isNothing mRoom) Scotty.next
+            roomExists <- liftAndCatchIO $ roomExists rooms roomName
+            when (not roomExists) Scotty.next
             setHeader "Content-Type" "text/html; charset=utf-8"
             file $ "public" </> "room.html"
-        wsMiddleware $ require findRoomName (chatMiddleware (subscribeToRoom rooms))
+        wsMiddleware $ (chatMiddleware rooms) `requires` findRoomName 
         middleware $ staticPolicy $ hasPrefix "public/"
 
 findRoomName :: WAI.Request -> Maybe T.Text
@@ -58,16 +57,12 @@ findRoomName req = T.stripPrefix "/r/" path
         header = WSWai.getRequestHead req
         path = T.Encoding.decodeUtf8 $ WS.requestPath header
 
-chatMiddleware :: RoomLookup -> T.Text -> Application -> WAI.Request -> (WAI.Response -> IO WAI.ResponseReceived) -> IO WAI.ResponseReceived
-chatMiddleware subscribeRoom roomName nextApp req res =
-    let 
+chatMiddleware :: RoomsService -> T.Text -> Application -> WAI.Request -> (WAI.Response -> IO WAI.ResponseReceived) -> IO WAI.ResponseReceived
+chatMiddleware rs roomName nextApp req res = do
+    T.IO.putStrLn $ T.append "New WS connection to room: " roomName
+    withRoom rs roomName wsHandler (nextApp req res)
+    where
         wsHandler = \chan -> WSWai.websocketsOr WS.defaultConnectionOptions (roomWSServerApp chan) nextApp req res
-    in do
-        T.IO.putStrLn $ T.append "New WS connection to room: " roomName
-        mChan <- subscribeRoom roomName
-        case mChan of
-            Just chan -> wsHandler chan
-            Nothing -> nextApp req res
 
 -- Block on both msgs from the WS connection, and on msgs from the room 'channel'...
 roomWSServerApp :: Chan T.Text -> WS.PendingConnection -> IO ()

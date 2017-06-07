@@ -20,11 +20,11 @@ library
                      , MiddlewareUtil
   build-depends:       base >= 4.7 && < 5
                      , random
-                     , text
                      , scotty
                      , websockets
                      , wai-websockets
                      , wai
+                     , time
                      , text
   default-language:    Haskell2010
 
