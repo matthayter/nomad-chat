@@ -6,28 +6,27 @@ import Lib
 import RoomsService
 import MiddlewareUtil
 
-import qualified Web.Scotty as Scotty;
-    import       Web.Scotty (liftAndCatchIO, scotty, param, get, post, html, middleware, setHeader, file)
+import           Control.Concurrent.MVar
+import           Control.Monad
 
-import Network.Wai.Middleware.Static (staticPolicy, hasPrefix)
-import System.FilePath ((</>))
-import qualified Network.WebSockets as WS
-import qualified Network.Wai.Handler.WebSockets as WSWai
-import qualified Network.Wai as WAI;
-    import       Network.Wai (Application, Middleware)
-import Data.Monoid (mconcat)
-import Control.Monad
+import           Control.Concurrent (forkIO, killThread)
+import qualified Control.Exception as Ex
+import qualified Control.Concurrent.Chan as Chan;
+import           Control.Concurrent.Chan (Chan)
+import           Data.Maybe (isNothing)
+import           Data.Monoid (mconcat)
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.IO as T.IO
 import qualified Data.Text.Encoding as T.Encoding
-import           Data.Maybe (isNothing)
-
-import           Control.Concurrent.MVar
-import Control.Concurrent (forkIO, killThread)
-import qualified Control.Exception as Ex
-import qualified Control.Concurrent.Chan as Chan;
-    import       Control.Concurrent.Chan (Chan)
+import qualified Network.Wai as WAI;
+import           Network.Wai (Application, Middleware)
+import           Network.Wai.Middleware.Static (staticPolicy, hasPrefix)
+import qualified Network.Wai.Handler.WebSockets as WSWai
+import qualified Network.WebSockets as WS
+import qualified Web.Scotty as Scotty;
+import           Web.Scotty (liftAndCatchIO, scotty, param, get, post, html, middleware, setHeader, file)
+import           System.FilePath ((</>))
 
 default (T.Text)
 

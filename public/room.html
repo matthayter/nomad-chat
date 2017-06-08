@@ -29,9 +29,15 @@
         <textarea id="output" style="width:620px;height:300px" readonly="readonly"></textarea>
     </div>
 
+    <!-- Adds 'persistentwebsocket' to the global namespace -->
+    <script type="text/javascript" src="/public/js/persistentwebsocket.min.js" ></script>
+
     <script type="text/javascript">
         var socket = null;
+        var PWS = persistentwebsocket.PersistentWebsocket;
         $(document).ready(function() {
+            setConnectionState("connecting");
+            connect();
             $('button').bind('click', function() {
                 if (this.name === 'send') {
                     console.log('send');
@@ -51,9 +57,12 @@
                 return;
             $('button[name="open"]').attr('disabled', true);
             $('button[name="close"],button[name="send"],button[name="rename"]').attr('disabled', false);
-            socket = new WebSocket('ws://' + location.host + location.pathname);
+            socket = new PWS('ws://' + location.host + location.pathname,  {
+                reachabilityTestUrl: "/"
+            });
             socket.onopen = function() {
                 console.log('open');
+                setConnectionState("connected");
             };
             socket.onmessage = function(e) {
                 var m = decodeURIComponent(e.data);
@@ -61,8 +70,12 @@
             };
             socket.onclose = function(e) {
                 console.log('onclose');
-                $('button[name="open"]').attr('disabled', false);
+                setConnectionState("disconnected");
             };
+            socket.onbeforereconnect = function(e) {
+                setConnectionState("connecting");
+            };
+            socket.open();
         }
         function send() {
             var el = $('input[name="message"]');
@@ -82,6 +95,15 @@
         function post(msg) {
             var el = $('#output');
             el.val(msg + '\n' + el.val());
+        }
+        function setConnectionState(stateStr) {
+            if (stateStr ===  "connecting") {
+                post("-- Connecting...");
+            } else if (stateStr === "connected") {
+                post("-- Connected");
+            } else if (stateStr === "disconnected") {
+                post("-- Disconnected");
+            }
         }
     </script>
 
