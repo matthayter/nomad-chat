@@ -25,15 +25,30 @@ import           Network.Wai.Middleware.Static (staticPolicy, hasPrefix)
 import qualified Network.Wai.Handler.WebSockets as WSWai
 import qualified Network.WebSockets as WS
 import qualified Web.Scotty as Scotty;
-import           Web.Scotty (liftAndCatchIO, scotty, param, get, post, html, middleware, setHeader, file)
+import           Web.Scotty (ScottyM, liftAndCatchIO, param, get, post, html, middleware, setHeader, file)
+import           System.Environment (getArgs)
+import           System.Exit (die)
 import           System.FilePath ((</>))
 
 default (T.Text)
 
 main :: IO ()
 main = do
+    -- Prod or dev mode?
+    args <- getArgs
+    let invalidArgs = die "Required first argument: 'production' or 'development'"
+    when (args == []) $ invalidArgs
+    let (envMode : _) = args
+    scottyMode <- case envMode of
+        "production" -> return $ Scotty.scotty 80
+        "development" -> return $ Scotty.scotty 3000
+        otherwise -> invalidArgs
+    web scottyMode
+
+web :: (ScottyM () -> IO ()) -> IO ()
+web scotty = do
     rooms <- newRoomsService
-    scotty 3000 $ do
+    scotty $ do
         httpget "/" $ do
             setHeader "Content-Type" "text/html; charset=utf-8"
             file $ "public" </> "index.html"

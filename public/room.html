@@ -2,31 +2,26 @@
 <html>
 <head>
     <meta charset="utf-8" />
-	<meta http-equiv="content-language" content="sk" />
-	<meta name="format-detection" content="telephone=no"/>
-	<meta name="viewport" content="width=1024, user-scalable=yes" />
-	<meta name="robots" content="all,follow" />
-	<script type="text/javascript" src="//ajax.googleapis.com/ajax/libs/jquery/2.0.0/jquery.min.js"></script>
-	<style type="text/css">
-		body { padding: 50px; margin: 0; font:normal 12px Arial; color: gray }
-		a { float:left; margin: 0 5px 0 0; font-size: 13px; }
-		p { background-color: #F0F0F0; padding: 5px; font:bold 15px Arial; }
-		button { width: 120px; }
-		.mb5 { margin-bottom: 5px; }
-	</style>
+    <meta http-equiv="content-language" content="sk" />
+    <meta name="format-detection" content="telephone=no"/>
+    <meta name="viewport" content="width=1024, user-scalable=yes" />
+    <meta name="robots" content="all,follow" />
+    <script type="text/javascript" src="//ajax.googleapis.com/ajax/libs/jquery/2.0.0/jquery.min.js"></script>
+    <style type="text/css">
+        body { padding: 50px; margin: 0; font:normal 12px Arial; color: gray }
+        a { float:left; margin: 0 5px 0 0; font-size: 13px; }
+        p { background-color: #F0F0F0; padding: 5px; font:bold 15px Arial; }
+        button { width: 120px; }
+        .mb5 { margin-bottom: 5px; }
+    </style>
 </head>
 <body>
-
-    <div class="mb5"><button name="open">CONNECT</button></div>
-    <div><button name="close" disabled="disabled">DISCONNECT</button></div>
-    <br />
-    <div>
-        <input type="text" name="message" maxlength="200" style="width:500px" />
-        <button name="send" disabled="disabled">SEND</div>
-    </div>
-    <br />
     <div>
         <textarea id="output" style="width:620px;height:300px" readonly="readonly"></textarea>
+    </div>
+    <div>
+        <input id="input" type="text" name="message" maxlength="200" style="width:500px" />
+        <button name="send" disabled="disabled">SEND</div>
     </div>
 
     <!-- Adds 'persistentwebsocket' to the global namespace -->
@@ -51,12 +46,16 @@
                 console.log('disconnect');
                 disconnect();
             });
+            $("#input").keydown(function(e) {
+                // Hitting Enter
+                if (e.keyCode === 13 ) {
+                    send()
+                }
+            })
         });
         function connect() {
             if (socket !== null)
                 return;
-            $('button[name="open"]').attr('disabled', true);
-            $('button[name="close"],button[name="send"],button[name="rename"]').attr('disabled', false);
             socket = new PWS('ws://' + location.host + location.pathname,  {
                 reachabilityTestUrl: "/"
             });
@@ -78,11 +77,16 @@
             socket.open();
         }
         function send() {
-            var el = $('input[name="message"]');
-            var msg = el.val();
-            if (socket !== null && msg.length > 0)
+            const input = $("#input").val().trim()
+            if (input.length > 0) {
+                wsSend(input)
+                $("#input").val('');
+            }
+        }
+        function wsSend(msg) {
+            if (socket !== null && msg.length > 0) {
                 socket.send(encodeURIComponent(msg));
-            el.val('');
+            }
         }
         function disconnect() {
             if (socket === null)
