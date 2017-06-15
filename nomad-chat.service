@@ -1,0 +1,7 @@
+[Unit]
+Description=Nomad Chat Web App
+
+[Service]
+ExecStart=/opt/nomad-chat/nomad-chat-exe production
+WorkingDirectory=/opt/nomad-chat
+StandardOutput=journal
