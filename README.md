@@ -22,6 +22,7 @@ The following was done to initialize the server (TODO: automate this):
 * mkdir /opt/nomad-chat
 * (extract tar.gz into /opt/, make symlink from /opt/nomad-chat to /opt/nomad-chat-0.0.1.0
 * ln -s /opt/nomad-chat/nomad-chat.service /etc/systemd/system/nomad-chat.service
+* sudo adduser --system --no-create-home --group --disabled-password --disabled-login nomad-chat
 
 ### License
 

@@ -25,12 +25,13 @@ library
                      , scotty
                      , time
                      , text
-                     , websockets
                      , wai-websockets
                      , wai
+                     , warp
+                     , websockets
   default-language:    Haskell2010
   if os(windows)
-    cpp-options:       -DOS_Windows
+    cpp-options:         -DOS_Windows
   else
     build-depends:       unix
 

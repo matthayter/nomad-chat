@@ -41,7 +41,7 @@ main = do
     when (args == []) $ invalidArgs
     let (envMode : _) = args
     scottyMode <- case envMode of
-        "production" -> prodModeScotty
+        "production" -> return prodModeScotty
         "development" -> return $ Scotty.scotty 3000
         otherwise -> invalidArgs
     web scottyMode

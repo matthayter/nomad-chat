@@ -7,17 +7,19 @@ import           System.Exit (die)
 prodModeScotty = die "Production Mode not available on Windows"
 #else
 
-import qualified Scotty as Scotty
+import qualified Data.Default.Class as Default
+import qualified Web.Scotty as Scotty
 import qualified System.Posix.User as User
+import           Network.Wai.Handler.Warp
 
-prodModeScotty :: ScottyM () -> IO ()
+prodModeScotty :: Scotty.ScottyM () -> IO ()
 prodModeScotty = Scotty.scottyOpts opts 
     where
         defaultWarpSettings = Scotty.settings Default.def 
         setUser = do
-            User.userId `fmap` User.getUserEntryForName "nomad-chat" >>= User.setUserId
-            User.groupId `fmap` User.getGroupEntryForName "nomad-chat" >>= User.setGroupId
+            User.groupID `fmap` User.getGroupEntryForName "nomad-chat" >>= User.setGroupID
+            User.userID `fmap` User.getUserEntryForName "nomad-chat" >>= User.setUserID
         prodSettings = (setFdCacheDuration 10) . (setPort 80) . (setBeforeMainLoop setUser) $ defaultWarpSettings
-        opts = Default.def {settings = prodSettings}
+        opts = Default.def {Scotty.settings = prodSettings}
 
 #endif
