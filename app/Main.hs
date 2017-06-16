@@ -35,6 +35,8 @@ default (T.Text)
 
 main :: IO ()
 main = do
+    -- Line buffered on output to make the logging consistent.
+    hSetBuffering stdout LineBuffering
     -- Prod or dev mode?
     args <- getArgs
     let invalidArgs = die "Required first argument: 'production' or 'development'"
