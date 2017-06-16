@@ -25,6 +25,7 @@ import qualified Data.Time as Time
 import qualified Data.Time.Format as Time
 import           Data.Time (UTCTime, NominalDiffTime)
 import           Data.Tuple (swap)
+import qualified Data.UUID as UUID
 import qualified System.Random as R
 
 data Room = Room {
@@ -32,6 +33,10 @@ data Room = Room {
     getChan :: Chan T.Text,
     getSubs :: Int,
     lastActive :: UTCTime
+}
+data User = User {
+    name :: T.Text,
+    membershipKey :: UUID.UUID
 }
 type RoomLookup = T.Text -> IO (Maybe (Chan T.Text))
 type RoomsService = (MVar [(T.Text, Room)], MVar String)
@@ -57,19 +62,15 @@ newRoomsService = do
         closeOldRooms rs
     return rs
 
+-- Infinite string of random [a-zA-Z0-9]
 randomAlphanumeric :: R.RandomGen g => g -> String
 randomAlphanumeric g = (chr . toAlphanumeric) `fmap` R.randomRs (0, 61) g
     where
-        toAlphanumeric i | i < 10 = i + 48
-                         | i < 36 = (i - 10) + 65
-                         | otherwise = (i - 36) + 97
+        toAlphanumeric i | i < 10 = i + 48              -- [0-9]
+                         | i < 36 = (i - 10) + 65       -- [A-Z]
+                         | otherwise = (i - 36) + 97    -- [a-z]
 
 -- Return a random string of 7 characters by taking the head of the infinite list given, storing the tail back in the MVar
-randomRoomName :: MVar String -> IO T.Text
-randomRoomName infString = do
-    randomShortString <- modifyMVar infString (return . swap . (splitAt 7))
-    return $ T.pack randomShortString
-
 subscribeToRoom :: RoomsService -> T.Text -> IO (Maybe (Chan T.Text))
 subscribeToRoom rs@(roomsRef, _) roomName = do
     rooms <- takeMVar $ roomsRef
@@ -134,6 +135,11 @@ createRandomRoom rs@(roomsRef, randStrRef) = do
     case mRoom of
         Nothing -> (,) roomName `fmap` createRoom rs roomName
         Just _ -> createRandomRoom rs
+
+randomRoomName :: MVar String -> IO T.Text
+randomRoomName infString = do
+    randomShortString <- modifyMVar infString (return . swap . (splitAt 7))
+    return $ T.pack randomShortString
 
 createRoom :: RoomsService -> T.Text -> IO (Chan T.Text)
 createRoom (roomsRef, _) roomName = do

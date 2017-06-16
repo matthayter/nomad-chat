@@ -25,6 +25,7 @@ library
                      , scotty
                      , time
                      , text
+                     , uuid
                      , wai-websockets
                      , wai
                      , warp
