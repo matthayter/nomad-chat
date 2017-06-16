@@ -2,8 +2,12 @@
 
 module UnixProdMode where
 
-#ifdef OS_Windows
 import           System.Exit (die)
+import qualified Web.Scotty as Scotty;
+
+prodModeScotty :: IO ( Scotty.ScottyM () -> IO () )
+
+#ifdef OS_Windows
 prodModeScotty = die "Production Mode not available on Windows"
 #else
 
@@ -12,8 +16,7 @@ import qualified Web.Scotty as Scotty
 import qualified System.Posix.User as User
 import           Network.Wai.Handler.Warp
 
-prodModeScotty :: Scotty.ScottyM () -> IO ()
-prodModeScotty = Scotty.scottyOpts opts 
+prodModeScotty = return $ Scotty.scottyOpts opts 
     where
         defaultWarpSettings = Scotty.settings Default.def 
         setUser = do

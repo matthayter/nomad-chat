@@ -21,7 +21,7 @@
     </div>
     <div>
         <input id="input" type="text" name="message" maxlength="200" style="width:500px" />
-        <button name="send" disabled="disabled">SEND</div>
+        <button name="send">SEND</div>
     </div>
 
     <!-- Adds 'persistentwebsocket' to the global namespace -->
@@ -35,7 +35,6 @@
             connect();
             $('button').bind('click', function() {
                 if (this.name === 'send') {
-                    console.log('send');
                     send();
                     return;
                 }
@@ -43,8 +42,6 @@
                     connect();
                     return;
                 }
-                console.log('disconnect');
-                disconnect();
             });
             $("#input").keydown(function(e) {
                 // Hitting Enter

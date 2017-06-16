@@ -30,21 +30,22 @@ import           Web.Scotty (ScottyM, liftAndCatchIO, param, get, post, html, mi
 import           System.Environment (getArgs)
 import           System.Exit (die)
 import           System.FilePath ((</>))
+import qualified System.IO as IO
 
 default (T.Text)
 
 main :: IO ()
 main = do
     -- Line buffered on output to make the logging consistent.
-    hSetBuffering stdout LineBuffering
+    IO.hSetBuffering IO.stdout IO.LineBuffering
     -- Prod or dev mode?
     args <- getArgs
     let invalidArgs = die "Required first argument: 'production' or 'development'"
     when (args == []) $ invalidArgs
     let (envMode : _) = args
     scottyMode <- case envMode of
-        "production" -> return prodModeScotty
         "development" -> return $ Scotty.scotty 3000
+        "production" -> prodModeScotty
         otherwise -> invalidArgs
     web scottyMode
 
