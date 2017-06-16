@@ -20,6 +20,7 @@ library
                      , MiddlewareUtil
                      , UnixProdMode
   build-depends:       base >= 4.7 && < 5
+                     , containers
                      , data-default-class
                      , random
                      , scotty

@@ -95,7 +95,6 @@ roomWSServerApp personalChan p = do
 
     Left ex <- Ex.try $ forever $ do
         msg <- WS.receiveData conn
-        T.IO.putStrLn msg
         Chan.writeChan personalChan msg
     case ex of
         WS.CloseRequest _ _ -> putStrLn "WS closed!"
