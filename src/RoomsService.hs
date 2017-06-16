@@ -154,19 +154,16 @@ createRoom rs@(RoomsService roomsRef _) roomName = do
     case mRoom of
         Just room -> (putMVar roomsRef rooms) >> (return room)
         Nothing -> do
-            (newRooms, newChan) <- addRoom rooms
-            putMVar roomsRef newRooms
-            return newChan
+            newRoom <- newRoomIO
+            putMVar roomsRef (Map.insert roomName newRoom rooms)
+            return newRoom
     where
-        newRoom = do
+        newRoomIO = do
             newChan <- Chan.newChan
             -- Constantly dump the contents of the new channel
             threadId <- forkIO $ forever $ Chan.readChan newChan
             currentTime <- Time.getCurrentTime
             return $ Room threadId newChan 0 currentTime
-        addRoom rooms = do
-            room <- newRoom
-            return $ (Map.insert roomName room rooms, room)
 
 closeOldRooms :: RoomsService -> IO ()
 closeOldRooms rs@(RoomsService roomsRef _) = do
