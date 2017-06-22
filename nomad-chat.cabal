@@ -20,6 +20,7 @@ library
                      , MiddlewareUtil
                      , UnixProdMode
   build-depends:       base >= 4.7 && < 5
+                     , case-insensitive
                      , containers
                      , data-default-class
                      , random
@@ -44,9 +45,13 @@ executable nomad-chat-exe
   main-is:             Main.hs
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
+                     , bytestring
+                     , case-insensitive
                      , filepath
+                     , http-types
                      , nomad-chat
                      , scotty
+                     , uuid
                      , wai-middleware-static
                      , websockets
                      , wai-websockets

@@ -3,6 +3,10 @@
 module RoomsService (
       RoomLookup
     , RoomsService
+    , RoomSubscription(..)
+    , RoomEntry(RoomEntry)
+    , RoomName
+    , UserName
     , newRoomsService
     , roomExists
     , withRoom
@@ -27,20 +31,43 @@ import qualified Data.Time.Format as Time
 import           Data.Time (UTCTime, NominalDiffTime)
 import           Data.Tuple (swap)
 import qualified Data.UUID as UUID
+import qualified Data.UUID.V4 as UUID.V4
 import qualified System.Random as R
 
 data Room = Room {
     getDumpThread :: ThreadId,
     getChan :: Chan T.Text,
     getSubs :: Int,
-    lastActive :: UTCTime
+    lastActive :: UTCTime,
+    users :: [User]
 }
+
 data User = User {
-    name :: T.Text,
+    name :: UserName,
     membershipKey :: UUID.UUID
-}
+} deriving Eq
+
 type RoomLookup = T.Text -> IO (Maybe (Chan T.Text))
-data RoomsService = RoomsService (MVar (Map.Map T.Text Room)) (MVar String)
+type RoomName = T.Text
+type UserName = T.Text
+type RoomChan = Chan T.Text
+data RoomsService = RoomsService (MVar (Map.Map RoomName Room)) (MVar String)
+
+data RoomEntry = RoomEntry {
+    roomEntryRoomName   :: RoomName,
+    userName            :: UserName,
+    nameKey             :: Maybe UUID.UUID -- The UUID associated with an existing name, if any.
+}
+
+data RoomSubscription = RoomSubscription {
+    roomName :: RoomName,
+    chan :: RoomChan,
+    user :: User
+}
+
+data RoomsError = UserNameTaken
+                | IncorrectUserKey
+                | RoomDoesNotExist
 
 instance Show Room where
     show room = "Room {" ++ (show $ getSubs room) ++ " subs; activeAt " ++ (Time.formatTime Time.defaultTimeLocale Time.rfc822DateFormat (lastActive room)) ++ "}"
@@ -63,26 +90,61 @@ newRoomsService = do
         closeOldRooms rs
     return rs
 
--- Infinite string of random [a-zA-Z0-9]
-randomAlphanumeric :: R.RandomGen g => g -> String
-randomAlphanumeric g = (chr . toAlphanumeric) `fmap` R.randomRs (0, 61) g
-    where
-        toAlphanumeric i | i < 10 = i + 48              -- [0-9]
-                         | i < 36 = (i - 10) + 65       -- [A-Z]
-                         | otherwise = (i - 36) + 97    -- [a-z]
-
-subscribeToRoom :: RoomsService -> T.Text -> IO (Maybe (Chan T.Text))
-subscribeToRoom rs@(RoomsService roomsRef _) roomName = do
+subscribeToRoom :: RoomsService -> RoomEntry -> IO (Either RoomsError RoomSubscription)
+subscribeToRoom rs@(RoomsService roomsRef _) roomEntry = do
     rooms <- takeMVar $ roomsRef
     currTime <- Time.getCurrentTime
-    let (mRoom, newRooms) = lookupReplaceInMap roomName (bumpSubs currTime 1) rooms
-    putStrLn "New Subscription. Rooms:"
-    putStrLn $ show newRooms
-    putMVar roomsRef newRooms
-    -- Duplicate the channel to return as the subscriber's interface with the room.
-    sequence $ freshChan `fmap` mRoom
+    let eSelectedRoom = eitherFromMaybe RoomDoesNotExist $ Map.lookup roomName rooms
+    eAddResult <- sequence $ eSelectedRoom >>= (addGetUser roomEntry)
+    case eAddResult of
+        Right (newRoom, user) -> do
+            putMVar roomsRef (Map.insert roomName newRoom rooms)
+            sub <- mkNewSubscription newRoom roomName user
+            return $ Right sub
+        Left e -> putMVar roomsRef rooms >> return (Left e)
+    -- Left: putMVar oldrooms, return Left
+    -- Right: putMVar new rooms, return Right with new room sub
+
     where
-        freshChan room = Chan.dupChan $ getChan room
+        roomName = roomEntryRoomName roomEntry
+
+eitherFromMaybe :: l -> Maybe r -> Either l r
+eitherFromMaybe l Nothing = Left l
+eitherFromMaybe _ (Just r) = Right r
+
+addGetUser :: RoomEntry -> Room -> Either RoomsError (IO (Room, User))
+addGetUser entry room =
+    case (nameKey entry) of
+        -- Existing user returning
+        Just key ->
+            let
+                user = User (userName entry) key
+            in
+                if elem user (users room) then
+                    Right $ return $ (room, user)
+                else
+                    Left IncorrectUserKey
+        -- New user, but name might be taken
+        Nothing -> do
+            ioNewUser <- tryAddUser (users room) (userName entry)
+            return $ do
+                newUser <- ioNewUser
+                return $ (room {users = (newUser : (users room))}, newUser)
+
+
+tryAddUser :: [User] -> UserName -> Either RoomsError (IO User)
+tryAddUser users uName =
+    if any (\u -> name u == uName) users then
+        Left UserNameTaken
+    else
+        Right $ do
+            newUuid <- UUID.V4.nextRandom
+            return $ User uName newUuid
+
+mkNewSubscription :: Room -> RoomName -> User -> IO RoomSubscription
+mkNewSubscription room name user = do
+    newChan <- Chan.dupChan $ getChan room
+    return $ RoomSubscription name newChan user
 
 unsubscribeFromRoom :: RoomsService -> T.Text -> IO ()
 unsubscribeFromRoom rs@(RoomsService roomsRef _) roomName = do
@@ -93,32 +155,13 @@ unsubscribeFromRoom rs@(RoomsService roomsRef _) roomName = do
     putStrLn "End subscription. Rooms:"
     putStrLn $ show newRooms
 
-withRoom :: RoomsService -> T.Text -> (Chan T.Text -> IO a) -> IO a -> IO a
-withRoom rs roomName f noRoom = do
-    mChan <- subscribeToRoom rs roomName
-    case mChan of
-        Just chan ->
-            Ex.finally (f chan) (unsubscribeFromRoom rs roomName)
-        Nothing -> noRoom
+withRoom :: RoomsService -> RoomEntry -> (Either RoomsError RoomSubscription -> IO a) -> IO a
+withRoom rs roomEntry f = do
+    eSub <- subscribeToRoom rs roomEntry
+    Ex.finally (f $ eSub) (unsubscribeFromRoom rs (roomEntryRoomName roomEntry))
 
 bumpSubs :: UTCTime -> Int -> Room -> Room
 bumpSubs currTime n room = room {getSubs = (getSubs room) + n, lastActive = currTime}
-
-lookupReplaceInMap :: Ord k => k -> (v -> v) -> Map.Map k v -> (Maybe v, Map.Map k v)
-lookupReplaceInMap k f m = Map.updateLookupWithKey (\x y -> return $ f y) k m
-
-lookupReplaceInList :: Eq a => a -> (b -> b) -> [(a,b)] -> (Maybe b, [(a,b)])
-lookupReplaceInList _ _ [] = (Nothing, [])
-lookupReplaceInList key mutator (x:xs) =
-    if (key == fst x) then
-        let
-            newVal = mutator $ snd x
-            newList = (key, newVal) : xs
-        in
-            (Just (snd x), newList)
-    else
-        let (res, l) = lookupReplaceInList key mutator xs in (res, x : l)
-
 
 lookupRoom :: RoomsService -> T.Text -> IO (Maybe (Chan T.Text))
 lookupRoom rs roomName = lookupRoom' rs roomName >>= (return . fmap getChan)
@@ -163,7 +206,7 @@ createRoom rs@(RoomsService roomsRef _) roomName = do
             -- Constantly dump the contents of the new channel
             threadId <- forkIO $ forever $ Chan.readChan newChan
             currentTime <- Time.getCurrentTime
-            return $ Room threadId newChan 0 currentTime
+            return $ Room threadId newChan 0 currentTime []
 
 closeOldRooms :: RoomsService -> IO ()
 closeOldRooms rs@(RoomsService roomsRef _) = do
@@ -178,3 +221,27 @@ closeOldRooms rs@(RoomsService roomsRef _) = do
         endRoom roomName room = do
             putStrLn $ "Closing room: " ++ (show (roomName, room))
             killThread $ getDumpThread room
+
+-- Helpers
+lookupReplaceInMap :: Ord k => k -> (v -> v) -> Map.Map k v -> (Maybe v, Map.Map k v)
+lookupReplaceInMap k f m = Map.updateLookupWithKey (\x y -> return $ f y) k m
+
+lookupReplaceInList :: Eq a => a -> (b -> b) -> [(a,b)] -> (Maybe b, [(a,b)])
+lookupReplaceInList _ _ [] = (Nothing, [])
+lookupReplaceInList key mutator (x:xs) =
+    if (key == fst x) then
+        let
+            newVal = mutator $ snd x
+            newList = (key, newVal) : xs
+        in
+            (Just (snd x), newList)
+    else
+        let (res, l) = lookupReplaceInList key mutator xs in (res, x : l)
+
+-- Infinite string of random [a-zA-Z0-9]
+randomAlphanumeric :: R.RandomGen g => g -> String
+randomAlphanumeric g = (chr . toAlphanumeric) `fmap` R.randomRs (0, 61) g
+    where
+        toAlphanumeric i | i < 10 = i + 48              -- [0-9]
+                         | i < 36 = (i - 10) + 65       -- [A-Z]
+                         | otherwise = (i - 36) + 97    -- [a-z]

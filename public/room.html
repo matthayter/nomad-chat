@@ -11,11 +11,11 @@
         body { padding: 50px; margin: 0; font:normal 12px Arial; color: gray }
         a { float:left; margin: 0 5px 0 0; font-size: 13px; }
         p { background-color: #F0F0F0; padding: 5px; font:bold 15px Arial; }
-        button { width: 120px; }
         .mb5 { margin-bottom: 5px; }
     </style>
 </head>
 <body>
+    <div>Select name: <input type="text" name="username" maxlength="20"> <button name="name-submit" />&#x1F44D;</div>
     <div>
         <textarea id="output" style="width:620px;height:300px" readonly="readonly"></textarea>
     </div>
@@ -26,21 +26,28 @@
 
     <!-- Adds 'persistentwebsocket' to the global namespace -->
     <script type="text/javascript" src="/public/js/persistentwebsocket.min.js" ></script>
+    <!-- Adds 'Cookies' to the global namespace -->
+    <script type="text/javascript" src="/public/js/js.cookie.js" ></script>
 
     <script type="text/javascript">
         var socket = null;
         var PWS = persistentwebsocket.PersistentWebsocket;
         $(document).ready(function() {
-            setConnectionState("connecting");
-            connect();
+            setConnectionState("disconnected");
+            let prevName = Cookies.get('prev_username');
+            if (prevName != null) {
+                $('input[name=username]').val(prevName);
+            }
             $('button').bind('click', function() {
                 if (this.name === 'send') {
                     send();
                     return;
                 }
                 if (this.name === 'open') {
-                    connect();
                     return;
+                }
+                if (this.name === 'name-submit') {
+                    connect($('input[name=username]').val());
                 }
             });
             $("#input").keydown(function(e) {
@@ -50,9 +57,10 @@
                 }
             })
         });
-        function connect() {
+        function connect(name) {
             if (socket !== null)
                 return;
+            Cookies.set('prev_username', name, {path: window.location.pathname, expires: 1})
             socket = new PWS('ws://' + location.host + location.pathname,  {
                 reachabilityTestUrl: "/"
             });
@@ -71,6 +79,7 @@
             socket.onbeforereconnect = function(e) {
                 setConnectionState("connecting");
             };
+            setConnectionState("connecting");
             socket.open();
         }
         function send() {
