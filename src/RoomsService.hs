@@ -7,6 +7,7 @@ module RoomsService (
     , RoomEntry(RoomEntry)
     , RoomName
     , UserName
+    , User(..)
     , newRoomsService
     , roomExists
     , withRoom
@@ -17,6 +18,7 @@ module RoomsService (
 import           Data.List
 import           Data.Maybe
 import           Control.Concurrent.MVar
+import           TextShow
 
 import           Control.Concurrent (ThreadId, threadDelay, forkIO, killThread)
 import qualified Control.Concurrent.Chan as Chan;
@@ -44,7 +46,7 @@ data Room = Room {
 
 data User = User {
     name :: UserName,
-    membershipKey :: UUID.UUID
+    secretKey :: UUID.UUID
 } deriving Eq
 
 type RoomLookup = T.Text -> IO (Maybe (Chan T.Text))
@@ -57,7 +59,10 @@ data RoomEntry = RoomEntry {
     roomEntryRoomName   :: RoomName,
     userName            :: UserName,
     nameKey             :: Maybe UUID.UUID -- The UUID associated with an existing name, if any.
-}
+} deriving Show
+
+instance TextShow RoomEntry where
+    showb = fromString . show
 
 data RoomSubscription = RoomSubscription {
     roomName :: RoomName,
@@ -68,6 +73,10 @@ data RoomSubscription = RoomSubscription {
 data RoomsError = UserNameTaken
                 | IncorrectUserKey
                 | RoomDoesNotExist
+                deriving Show
+
+instance TextShow RoomsError where
+    showb = fromString . show
 
 instance Show Room where
     show room = "Room {" ++ (show $ getSubs room) ++ " subs; activeAt " ++ (Time.formatTime Time.defaultTimeLocale Time.rfc822DateFormat (lastActive room)) ++ "}"
@@ -90,6 +99,7 @@ newRoomsService = do
         closeOldRooms rs
     return rs
 
+-- TODO: clean this up, probably with a transformer
 subscribeToRoom :: RoomsService -> RoomEntry -> IO (Either RoomsError RoomSubscription)
 subscribeToRoom rs@(RoomsService roomsRef _) roomEntry = do
     rooms <- takeMVar $ roomsRef
@@ -98,8 +108,13 @@ subscribeToRoom rs@(RoomsService roomsRef _) roomEntry = do
     eAddResult <- sequence $ eSelectedRoom >>= (addGetUser roomEntry)
     case eAddResult of
         Right (newRoom, user) -> do
-            putMVar roomsRef (Map.insert roomName newRoom rooms)
-            sub <- mkNewSubscription newRoom roomName user
+            -- Bump subs
+            let newRoom2 = bumpSubs currTime 1 newRoom
+            let newRooms = Map.insert roomName newRoom2 rooms
+            putMVar roomsRef newRooms
+            sub <- mkNewSubscription newRoom2 roomName user
+            putStrLn "New subscription. Rooms:"
+            putStrLn $ show newRooms
             return $ Right sub
         Left e -> putMVar roomsRef rooms >> return (Left e)
     -- Left: putMVar oldrooms, return Left
@@ -146,7 +161,7 @@ mkNewSubscription room name user = do
     newChan <- Chan.dupChan $ getChan room
     return $ RoomSubscription name newChan user
 
-unsubscribeFromRoom :: RoomsService -> T.Text -> IO ()
+unsubscribeFromRoom :: RoomsService -> RoomName -> IO ()
 unsubscribeFromRoom rs@(RoomsService roomsRef _) roomName = do
     rooms <- takeMVar $ roomsRef
     currTime <- Time.getCurrentTime
@@ -158,7 +173,9 @@ unsubscribeFromRoom rs@(RoomsService roomsRef _) roomName = do
 withRoom :: RoomsService -> RoomEntry -> (Either RoomsError RoomSubscription -> IO a) -> IO a
 withRoom rs roomEntry f = do
     eSub <- subscribeToRoom rs roomEntry
-    Ex.finally (f $ eSub) (unsubscribeFromRoom rs (roomEntryRoomName roomEntry))
+    case eSub of
+        Right _ -> Ex.finally (f $ eSub) (unsubscribeFromRoom rs (roomEntryRoomName roomEntry))
+        Left _ -> f $ eSub
 
 bumpSubs :: UTCTime -> Int -> Room -> Room
 bumpSubs currTime n room = room {getSubs = (getSubs room) + n, lastActive = currTime}

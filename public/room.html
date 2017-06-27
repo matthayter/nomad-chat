@@ -61,8 +61,8 @@
             if (socket !== null)
                 return;
             Cookies.set('prev_username', name, {path: window.location.pathname, expires: 1})
-            socket = new PWS('ws://' + location.host + location.pathname,  {
-                reachabilityTestUrl: "/"
+            socket = new PWS('ws://' + location.host + location.pathname + "?username=" + name,  {
+                initialBackoffDelayMillis: 10000
             });
             socket.onopen = function() {
                 console.log('open');

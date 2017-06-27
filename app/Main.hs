@@ -8,15 +8,19 @@ import RoomsService
 import MiddlewareUtil
 import UnixProdMode
 
+import Prelude hiding ((++))
 import Control.Concurrent.MVar
 import Control.Monad
+import TextShow
 
 -- Qualified
+import qualified Blaze.ByteString.Builder as Blaze
+import           Data.Default.Class (def)
 import           Control.Concurrent (forkIO, killThread)
 import qualified Control.Exception as Ex
 import qualified Control.Concurrent.Chan as Chan;
 import           Control.Concurrent.Chan (Chan)
-import qualified Data.ByteString.Char8 as BSC
+import qualified Data.ByteString as BS
 import qualified Data.CaseInsensitive as CI
 import           Data.Maybe (isNothing)
 import           Data.Monoid (mempty, mconcat)
@@ -25,12 +29,15 @@ import qualified Data.Text.Lazy as TL
 import qualified Data.Text.IO as T.IO
 import qualified Data.Text.Encoding as T.Encoding
 import qualified Data.UUID as UUID
+import qualified Network.HTTP.Types.Header as Header
 import           Network.HTTP.Types.Status (badRequest400, notFound404)
+import qualified Network.HTTP.Types.URI as URI
 import qualified Network.Wai as WAI;
 import           Network.Wai (Application, Middleware)
 import           Network.Wai.Middleware.Static (staticPolicy, hasPrefix)
 import qualified Network.Wai.Handler.WebSockets as WSWai
 import qualified Network.WebSockets as WS
+import qualified Web.Cookie as Cookie;
 import qualified Web.Scotty as Scotty;
 import           Web.Scotty (ScottyM, liftAndCatchIO, param, get, post, html, middleware, setHeader, file)
 import           System.Environment (getArgs)
@@ -39,6 +46,9 @@ import           System.FilePath ((</>))
 import qualified System.IO as IO
 
 default (T.Text)
+
+(++) :: T.Text -> T.Text -> T.Text
+(++) = T.append
 
 main :: IO ()
 main = do
@@ -76,16 +86,26 @@ web scotty = do
         middleware $ staticPolicy $ hasPrefix "public/"
 
 findRoomName :: WAI.Request -> Maybe T.Text
-findRoomName req = T.stripPrefix "/r/" path
+findRoomName req =
+    case path of
+        ("r" : roomName : []) -> Just roomName
+        _ -> Nothing
     where
-        header = WSWai.getRequestHead req
-        path = T.Encoding.decodeUtf8 $ WS.requestPath header
+        path = WAI.pathInfo req
 
 findUserName :: WAI.Request -> Maybe T.Text
-findUserName req = undefined
+findUserName req =
+    let 
+        textQuery = URI.queryToQueryText $ WAI.queryString req
+    in
+        join $ lookup "username" textQuery
 
 findUserKey :: WAI.Request -> Maybe UUID.UUID
-findUserKey req = undefined
+findUserKey req = do
+    cookieHeaderBytes <- lookup Header.hCookie (WAI.requestHeaders req)
+    let textCookies = Cookie.parseCookiesText $ cookieHeaderBytes
+    userUuidBytes <- lookup userUuidCookieName textCookies
+    UUID.fromText userUuidBytes
 
 chatMiddleware :: RoomsService -> RoomName -> Application -> WAI.Request -> (WAI.Response -> IO WAI.ResponseReceived) -> IO WAI.ResponseReceived
 chatMiddleware rs roomName nextApp req res = do
@@ -97,22 +117,28 @@ chatMiddleware rs roomName nextApp req res = do
         Just handler -> handler
         Nothing -> res $ WAI.responseLBS badRequest400 [] mempty
     where
-        wsHandler = \chan -> WSWai.websocketsOr WS.defaultConnectionOptions (roomWSServerApp chan) nextApp req res
+        wsHandler = \roomSub -> WSWai.websocketsOr WS.defaultConnectionOptions (roomWSServerApp roomSub) nextApp req res
 
 -- Try and subscribe - return appropriate errors and error codes if subscription fails
-chatHandlerValidated :: RoomsService -> RoomName -> UserName -> Maybe UUID.UUID -> (Chan T.Text -> IO WAI.ResponseReceived) -> (WAI.Response -> IO WAI.ResponseReceived) -> IO WAI.ResponseReceived
+chatHandlerValidated :: RoomsService -> RoomName -> UserName -> Maybe UUID.UUID -> (RoomSubscription -> IO WAI.ResponseReceived) -> (WAI.Response -> IO WAI.ResponseReceived) -> IO WAI.ResponseReceived
 chatHandlerValidated rs roomName userName mNameKey wsHandler res = do
     let roomEntry = RoomEntry roomName userName mNameKey
+    printT $ "New RoomEntry: " ++ (showt roomEntry)
     withRoom rs roomEntry $ \eSub ->
         case eSub of
-            Right roomSub -> wsHandler (chan roomSub)
-            Left e -> undefined
+            Right roomSub -> wsHandler roomSub
+            Left subError -> do
+                printT $ "Failed to join room: " ++ (showt subError)
+                res $ WAI.responseLBS badRequest400 [] mempty
 
 -- Block on both msgs from the WS connection, and on msgs from the room 'channel'...
-roomWSServerApp :: Chan T.Text -> WS.PendingConnection -> IO ()
-roomWSServerApp personalChan p = do
+roomWSServerApp :: RoomSubscription -> WS.PendingConnection -> IO ()
+roomWSServerApp roomSub p = do
+    let personalChan = chan roomSub
+    let uuid = secretKey . user $ roomSub
+    let rName = roomName roomSub
     -- Accept request whilst setting a UUID cookie to match the name
-    conn <- WS.acceptRequestWith p WS.defaultAcceptRequest -- (WS.defaultAcceptRequest {WS.acceptHeaders = uuidCookie})
+    conn <- WS.acceptRequestWith p (WS.defaultAcceptRequest {WS.acceptHeaders = uuidCookie rName uuid})
     -- Heartbeat. Thread dies silently when connections dies / is closed.
     WS.forkPingThread conn 2
     -- Push new messages to the client
@@ -129,15 +155,23 @@ roomWSServerApp personalChan p = do
     
     killThread outgoingWorkerThread
     putStrLn "Finished WS request"
-    where
 
-uuidCookie :: UUID.UUID -> WS.Headers
-uuidCookie uuid = [(headerName, headerVal)]
+uuidCookie :: RoomName -> UUID.UUID -> WS.Headers
+uuidCookie roomName uuid = [(headerName, headerVal)]
     where
         headerName = toCi "Set-Cookie"
-        cookieName = "username-uuid"
-        cookieVal = UUID.toString uuid
-        headerVal = BSC.pack (cookieName ++ "=" ++ cookieVal ++ ";")
+        cookieVal = UUID.toText uuid
+        headerVal = Blaze.toByteString $ Cookie.renderSetCookie $ def {
+            Cookie.setCookieName = T.Encoding.encodeUtf8 userUuidCookieName,
+            Cookie.setCookieValue = T.Encoding.encodeUtf8 cookieVal,
+            Cookie.setCookiePath = Just $ T.Encoding.encodeUtf8 $ roomPath roomName
+        }
 
-toCi :: String -> CI.CI BSC.ByteString
-toCi = CI.mk . BSC.pack
+roomPath :: RoomName -> T.Text
+roomPath roomName = "/r/" ++ roomName
+
+userUuidCookieName :: T.Text
+userUuidCookieName = "username-uuid"
+
+toCi :: T.Text -> CI.CI BS.ByteString
+toCi = CI.mk . T.Encoding.encodeUtf8

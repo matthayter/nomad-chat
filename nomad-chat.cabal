@@ -27,6 +27,7 @@ library
                      , scotty
                      , time
                      , text
+                     , text-show
                      , uuid
                      , wai-websockets
                      , wai
@@ -45,12 +46,16 @@ executable nomad-chat-exe
   main-is:             Main.hs
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
+                     , blaze-builder
                      , bytestring
+                     , cookie
                      , case-insensitive
+                     , data-default-class
                      , filepath
                      , http-types
                      , nomad-chat
                      , scotty
+                     , text-show
                      , uuid
                      , wai-middleware-static
                      , websockets
