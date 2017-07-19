@@ -23,6 +23,7 @@ library
                      , case-insensitive
                      , containers
                      , data-default-class
+                     , mtl
                      , random
                      , scotty
                      , time
