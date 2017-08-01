@@ -99,16 +99,6 @@ runRoomOp rs err f roomOp = do
         Left e -> return $ err e
         Right a -> return $ f a
 
--- 'cleanup op always' sequences 'cleanup' into 'op' regardless of whether 'op' is an error
-cleanup :: MonadError e m => m a -> m b -> m a
-cleanup maybeFailure always = do
-    catchError maybeFailure passthru
-    val <- maybeFailure
-    always
-    return val
-    where
-        passthru someErr = always >> throwError someErr
-
 roomExists :: RoomsService -> T.Text -> IO Bool
 roomExists rs roomName = (not . isNothing) `fmap` lookupRoom rs roomName
 
