@@ -38,7 +38,7 @@ import qualified Data.UUID as UUID
 import qualified Data.UUID.V4 as UUID.V4
 import qualified System.Random as R
 
-type RoomOp = ReaderT RoomsService (StateT (Maybe Rooms) (ExceptT RoomsError IO))
+type RoomOp = ReaderT RoomsService (ExceptT RoomsError IO)
 
 -- Proposed:
 -- type RoomOp = (ExceptT RoomsError IO)
@@ -93,7 +93,7 @@ default (T.Text)
 
 runRoomOp :: RoomsService -> (RoomsError -> b) -> (a -> b) -> RoomOp a -> IO b
 runRoomOp rs err f roomOp = do
-    let exception = evalStateT (runReaderT roomOp rs) Nothing
+    let exception = runReaderT roomOp rs
     eitherErr <- runExceptT exception
     case eitherErr of
         Left e -> return $ err e
@@ -197,16 +197,6 @@ getRooms :: RoomOp Rooms
 getRooms = do
     (RoomsService roomsMvar _) <- ask
     liftIO $ readMVar roomsMvar
-
-getAndLockRooms :: RoomOp Rooms
-getAndLockRooms = do
-    mRooms <- get
-    case mRooms of
-        Just rooms -> return rooms
-        Nothing -> do
-            rooms <- lock
-            put (Just rooms)
-            return rooms
 
 lock :: RoomOp Rooms
 lock = do
