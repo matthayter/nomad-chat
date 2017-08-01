@@ -40,6 +40,9 @@ import qualified System.Random as R
 
 type RoomOp = ReaderT RoomsService (StateT (Maybe Rooms) (ExceptT RoomsError IO))
 
+-- Proposed:
+-- type RoomOp = (ExceptT RoomsError IO)
+
 data Room = Room {
     getDumpThread :: ThreadId,
     getChan :: Chan T.Text,
@@ -90,8 +93,7 @@ default (T.Text)
 
 runRoomOp :: RoomsService -> (RoomsError -> b) -> (a -> b) -> RoomOp a -> IO b
 runRoomOp rs err f roomOp = do
-    let unlocked = roomOp >>= (\x -> unlock >> return x)
-    let exception = evalStateT (runReaderT unlocked rs) Nothing
+    let exception = evalStateT (runReaderT roomOp rs) Nothing
     eitherErr <- runExceptT exception
     case eitherErr of
         Left e -> return $ err e
@@ -108,7 +110,7 @@ cleanup maybeFailure always = do
         passthru someErr = always >> throwError someErr
 
 roomExists :: RoomsService -> T.Text -> IO Bool
-roomExists rs roomName = (not . isNothing) `fmap` lookupRoom' rs roomName
+roomExists rs roomName = (not . isNothing) `fmap` lookupRoom rs roomName
 
 newRoomsService :: IO RoomsService
 newRoomsService = do
@@ -133,7 +135,7 @@ withRoom rs roomEntry f = do
 createRandomRoom :: RoomsService -> IO (T.Text, Chan T.Text)
 createRandomRoom rs@(RoomsService roomsRef randStrRef) = do
     roomName <- randomRoomName randStrRef
-    mRoom <- lookupRoom' rs roomName
+    mRoom <- lookupRoom rs roomName
     case mRoom of
         Nothing -> do
             newRoom <- createRoom rs roomName
@@ -147,41 +149,45 @@ subscribeToRoom :: RoomEntry -> RoomOp (RoomSubscription)
 subscribeToRoom roomEntry =
     let
         roomName = roomEntryRoomName roomEntry
-        subscribe' = do
-            (room, user) <- addGetUser roomEntry
+        subscribe' rooms = do
+            (updatedRooms, room, user) <- addGetUser rooms roomEntry
             sub <- liftIO $ mkNewSubscription room roomName user
+            unlock updatedRooms
             return sub
-    in
-        cleanup subscribe' unlock
+    in do
+        rooms <- lock
+        (subscribe' rooms) `catchError` (\err -> unlock rooms >> throwError err)
 
--- Should update rooms in state monad
-addGetUser :: RoomEntry -> RoomOp (Room, User)
-addGetUser entry = do
+addGetUser :: Rooms -> RoomEntry -> RoomOp (Rooms, Room, User)
+addGetUser rooms entry = do
     let roomName = roomEntryRoomName entry
-    room <- lookupRoom2 roomName
+    room <- roomOpFromMaybe RoomDoesNotExist $ Map.lookup roomName rooms
+    currTime <- liftIO $ Time.getCurrentTime
     case (nameKey entry) of
         -- Existing user returning
-        Just key ->
-            let
-                user = User (userName entry) key
-            in
-                if elem user (users room) then
-                    return $ (room, user)
-                else
-                    throwError IncorrectUserKey
+        Just key -> do
+            let user = User (userName entry) key
+            verifyUser user (users room)
+            let bumpedRoom = bumpSubs currTime 1 room
+            return $ (rooms, bumpedRoom, user)
+
         -- New user, but name might be taken
         Nothing -> do
-            newUser <- tryAddUser2 (users room) (userName entry)
+            newUser <- tryAddUser (users room) (userName entry)
             let newRoom = room {users = (newUser : (users room))}
-            currTime <- liftIO $ Time.getCurrentTime
             let bumpedRoom = bumpSubs currTime 1 newRoom
-            rooms <- getAndLockRooms
             let updatedRooms = Map.insert roomName bumpedRoom rooms
-            put (Just updatedRooms)
-            return $ (room, newUser)
+            return $ (updatedRooms, room, newUser)
 
-tryAddUser2 :: [User] -> UserName -> RoomOp User
-tryAddUser2 users uName =
+verifyUser :: User -> [User] -> RoomOp ()
+verifyUser user users =
+    if elem user users then
+        return ()
+    else
+        throwError IncorrectUserKey
+
+tryAddUser :: [User] -> UserName -> RoomOp User
+tryAddUser users uName =
     if any (\u -> name u == uName) users then
         throwError UserNameTaken
     else
@@ -207,15 +213,10 @@ lock = do
     (RoomsService roomsMvar _) <- ask
     liftIO $ takeMVar roomsMvar
 
-unlock :: RoomOp ()
-unlock = do
-    mRooms <- get
+unlock :: Rooms -> RoomOp ()
+unlock rooms = do
     (RoomsService roomsMvar _) <- ask
-    case mRooms of
-        Just rooms -> do
-            put Nothing
-            liftIO $ putMVar roomsMvar rooms
-        Nothing -> return ()
+    liftIO $ putMVar roomsMvar rooms
 
 eitherFromMaybe :: l -> Maybe r -> Either l r
 eitherFromMaybe l Nothing = Left l
@@ -238,22 +239,12 @@ unsubscribeFromRoom rs@(RoomsService roomsRef _) roomName = do
 bumpSubs :: UTCTime -> Int -> Room -> Room
 bumpSubs currTime n room = room {getSubs = (getSubs room) + n, lastActive = currTime}
 
--- Reader, IO, Either
-lookupRoom2 :: T.Text -> RoomOp Room
-lookupRoom2 roomName = do
-    rooms <- getAndLockRooms
-    let mRoom = Map.lookup roomName rooms
-    roomOpFromMaybe mRoom
-    where
-        roomOpFromMaybe :: Maybe Room -> RoomOp Room
-        roomOpFromMaybe (Just room) = return room
-        roomOpFromMaybe (Nothing) = throwError RoomDoesNotExist
+roomOpFromMaybe :: RoomsError -> Maybe a -> RoomOp a
+roomOpFromMaybe _ (Just a) = return a
+roomOpFromMaybe err (Nothing) = throwError err
 
-lookupRoom :: RoomsService -> T.Text -> IO (Maybe (Chan T.Text))
-lookupRoom rs roomName = lookupRoom' rs roomName >>= (return . fmap getChan)
-
-lookupRoom' :: RoomsService -> T.Text -> IO (Maybe Room)
-lookupRoom' (RoomsService roomsRef _) roomName = do
+lookupRoom :: RoomsService -> T.Text -> IO (Maybe Room)
+lookupRoom (RoomsService roomsRef _) roomName = do
     rooms <- readMVar roomsRef
     return $ Map.lookup roomName rooms
 
