@@ -7,6 +7,7 @@ import Lib
 import RoomsService
 import MiddlewareUtil
 import UnixProdMode
+import Messages
 
 import Prelude hiding ((++))
 import Control.Concurrent.MVar
@@ -144,13 +145,14 @@ roomWSServerApp roomSub p = do
     -- Push new messages to the client
     outgoingWorkerThread <- forkIO $ forever $ do
         outgoing <- Chan.readChan personalChan
+        -- Replace with 'writeJsonMessage' or similar
         WS.sendTextData conn outgoing
 
     Left ex <- Ex.try $ forever $ do
-        msg <- WS.receiveData conn
+        ChatMessage msg <- WS.receiveData conn
         Chan.writeChan personalChan msg
     case ex of
-        WS.CloseRequest _ _ -> putStrLn "WS closed!"
+        WS.CloseRequest _ _ -> putStrLn "WS closed by remote"
         _ -> putStrLn "Other exception: " >> (putStrLn $ show (ex :: WS.ConnectionException))
     
     killThread outgoingWorkerThread

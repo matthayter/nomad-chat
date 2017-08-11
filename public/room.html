@@ -91,7 +91,8 @@
         }
         function wsSend(msg) {
             if (socket !== null && msg.length > 0) {
-                socket.send(encodeURIComponent(msg));
+                let o = {message: encodeURIComponent(msg)}
+                socket.send(JSON.stringify(o));
             }
         }
         function disconnect() {
