@@ -20,6 +20,8 @@ import           Control.Concurrent.MVar
 import           Control.Monad.Except
 import           Control.Monad.Reader
 import           Control.Monad.State.Strict
+import           Messages
+import           OutMessages
 import           TextShow
 
 import           Control.Concurrent (ThreadId, threadDelay, forkIO, killThread)
@@ -45,7 +47,7 @@ type RoomOp = ReaderT RoomsService (ExceptT RoomsError IO)
 
 data Room = Room {
     getDumpThread :: ThreadId,
-    getChan :: Chan T.Text,
+    getChan :: RoomChan,
     getSubs :: Int,
     lastActive :: UTCTime,
     users :: [User]
@@ -56,11 +58,10 @@ data User = User {
     secretKey :: UUID.UUID
 } deriving Eq
 
-type RoomLookup = T.Text -> IO (Maybe (Chan T.Text))
+type RoomChan = Chan OutgoingNomadMessage
 type RoomName = T.Text
 type Rooms = Map.Map RoomName Room
 type UserName = T.Text
-type RoomChan = Chan T.Text
 data RoomsService = RoomsService (MVar Rooms) (MVar String)
 
 data RoomEntry = RoomEntry {
@@ -122,7 +123,7 @@ withRoom rs roomEntry f = do
     where
         safeF sub = Ex.finally (f $ Right sub) (unsubscribeFromRoom rs (roomEntryRoomName roomEntry))
 
-createRandomRoom :: RoomsService -> IO (T.Text, Chan T.Text)
+createRandomRoom :: RoomsService -> IO (T.Text, RoomChan)
 createRandomRoom rs@(RoomsService roomsRef randStrRef) = do
     roomName <- randomRoomName randStrRef
     mRoom <- lookupRoom rs roomName
@@ -178,7 +179,7 @@ verifyUser user users =
 
 tryAddUser :: [User] -> UserName -> RoomOp User
 tryAddUser users uName =
-    if any (\u -> name u == uName) users then
+    if any (\u -> RoomsService.name u == uName) users then
         throwError UserNameTaken
     else
         liftIO UUID.V4.nextRandom >>= return . (User uName)

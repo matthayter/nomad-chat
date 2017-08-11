@@ -17,19 +17,19 @@ import qualified Network.WebSockets as WS
 --     }
 --     deriving (Generic, Show)
 
-data ChatMessage = ChatMessage {
+data IncomingNomadMessage = ChatMessage {
     message :: Text
 } deriving (Generic, Show)
 
-instance ToJSON ChatMessage where
+instance ToJSON IncomingNomadMessage where
     toEncoding = genericToEncoding defaultOptions
 
-instance FromJSON ChatMessage
+instance FromJSON IncomingNomadMessage
 
-newtype MC = MC (Maybe ChatMessage)
-
-instance WS.WebSocketsData ChatMessage where
+instance WS.WebSocketsData IncomingNomadMessage where
     fromLazyByteString bs = fromJust $ decode bs
     toLazyByteString = encode
+
+
 
 -- data RoomMessage = ChatMessage Text | UserList

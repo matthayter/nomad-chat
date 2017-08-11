@@ -8,6 +8,7 @@ import RoomsService
 import MiddlewareUtil
 import UnixProdMode
 import Messages
+import OutMessages
 
 import Prelude hiding ((++))
 import Control.Concurrent.MVar
@@ -149,8 +150,8 @@ roomWSServerApp roomSub p = do
         WS.sendTextData conn outgoing
 
     Left ex <- Ex.try $ forever $ do
-        ChatMessage msg <- WS.receiveData conn
-        Chan.writeChan personalChan msg
+        Messages.ChatMessage msg <- WS.receiveData conn
+        Chan.writeChan personalChan (OutMessages.ChatMessage msg)
     case ex of
         WS.CloseRequest _ _ -> putStrLn "WS closed by remote"
         _ -> putStrLn "Other exception: " >> (putStrLn $ show (ex :: WS.ConnectionException))

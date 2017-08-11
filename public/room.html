@@ -69,7 +69,8 @@
                 setConnectionState("connected");
             };
             socket.onmessage = function(e) {
-                var m = decodeURIComponent(e.data);
+                var o = JSON.parse(e.data);
+                var m = decodeURIComponent(o.message);
                 post(m);
             };
             socket.onclose = function(e) {

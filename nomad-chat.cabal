@@ -20,6 +20,7 @@ library
                      , MiddlewareUtil
                      , UnixProdMode
                      , Messages
+                     , OutMessages
   build-depends:       base >= 4.7 && < 5
                      , aeson
                      , case-insensitive
@@ -49,6 +50,7 @@ executable nomad-chat-exe
   main-is:             Main.hs
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
+                     , aeson
                      , blaze-builder
                      , bytestring
                      , cookie
