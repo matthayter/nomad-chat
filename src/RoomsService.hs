@@ -42,13 +42,10 @@ import qualified System.Random as R
 
 type RoomOp = ReaderT RoomsService (ExceptT RoomsError IO)
 
--- Proposed:
--- type RoomOp = (ExceptT RoomsError IO)
-
 data Room = Room {
     getDumpThread :: ThreadId,
     getChan :: RoomChan,
-    getSubs :: Int,
+    getSubs :: [UserName],
     lastActive :: UTCTime,
     users :: [User]
 }
@@ -56,7 +53,7 @@ data Room = Room {
 data User = User {
     name :: UserName,
     secretKey :: UUID.UUID
-} deriving Eq
+} deriving (Eq, Show)
 
 type RoomChan = Chan OutgoingNomadMessage
 type RoomName = T.Text
@@ -100,6 +97,9 @@ runRoomOp rs err f roomOp = do
         Left e -> return $ err e
         Right a -> return $ f a
 
+execRoomOp :: RoomsService -> RoomOp a -> IO ()
+execRoomOp rs roomOp = join $ runRoomOp rs (\err -> putStrLn ("RoomOp failed with err: " ++ show err)) (const $ return ()) roomOp
+
 roomExists :: RoomsService -> T.Text -> IO Bool
 roomExists rs roomName = (not . isNothing) `fmap` lookupRoom rs roomName
 
@@ -119,9 +119,11 @@ newRoomsService = do
 withRoom :: RoomsService -> RoomEntry -> (Either RoomsError RoomSubscription -> IO a) -> IO a
 withRoom rs roomEntry f = do
     let roomOpSub = subscribeToRoom roomEntry
-    join $ runRoomOp rs (\e -> f (Left e)) (\sub -> safeF sub) roomOpSub
+    join $ runRoomOp rs (\err -> f (Left err)) (\sub -> safeF sub) roomOpSub
     where
-        safeF sub = Ex.finally (f $ Right sub) (unsubscribeFromRoom rs (roomEntryRoomName roomEntry))
+        safeF sub = Ex.finally (f $ Right sub) (unsub sub)
+        unsub sub = execRoomOp rs (unsubscribeFromRoom sub roomName)
+        roomName = roomEntryRoomName roomEntry
 
 createRandomRoom :: RoomsService -> IO (T.Text, RoomChan)
 createRandomRoom rs@(RoomsService roomsRef randStrRef) = do
@@ -141,34 +143,52 @@ subscribeToRoom roomEntry =
     let
         roomName = roomEntryRoomName roomEntry
         subscribe' rooms = do
-            (updatedRooms, room, user) <- addGetUser rooms roomEntry
-            sub <- liftIO $ mkNewSubscription room roomName user
+            room <- roomOpFromMaybe RoomDoesNotExist $ Map.lookup roomName rooms
+            (updatedRoom, sub) <- addGetUser room roomEntry
+            let updatedRooms = Map.insert roomName updatedRoom rooms
+            -- sub <- liftIO $ mkNewSubscription updatedRoom roomName user
             unlock updatedRooms
             return sub
     in do
         rooms <- lock
         (subscribe' rooms) `catchError` (\err -> unlock rooms >> throwError err)
 
-addGetUser :: Rooms -> RoomEntry -> RoomOp (Rooms, Room, User)
-addGetUser rooms entry = do
+unsubscribeFromRoom :: RoomSubscription -> RoomName -> RoomOp ()
+unsubscribeFromRoom sub roomName =
+    let
+        unsubscribeFromRoom' rooms = do
+            currTime <- liftIO $ Time.getCurrentTime
+            room <- roomOpFromMaybe RoomDoesNotExist $ Map.lookup roomName rooms
+            updatedRoom <- rmSub sub room
+            let newRooms = Map.insert roomName updatedRoom rooms
+            unlock newRooms
+            liftIO $ putStrLn "End subscription. Rooms:"
+            liftIO $ putStrLn $ show newRooms
+    in do
+        rooms <- lock
+        (unsubscribeFromRoom' rooms) `catchError` (\err -> unlock rooms >> throwError err)
+
+-- addGetUser :: Room -> RoomEntry -> RoomOp (Rooms, Room, User)
+
+addGetUser :: Room -> RoomEntry -> RoomOp (Room, RoomSubscription)
+addGetUser room entry = do
     let roomName = roomEntryRoomName entry
-    room <- roomOpFromMaybe RoomDoesNotExist $ Map.lookup roomName rooms
-    currTime <- liftIO $ Time.getCurrentTime
     case (nameKey entry) of
         -- Existing user returning
         Just key -> do
             let user = User (userName entry) key
             verifyUser user (users room)
-            let bumpedRoom = bumpSubs currTime 1 room
-            return $ (rooms, bumpedRoom, user)
+            sub <- liftIO $ mkNewSubscription (getChan room) roomName user
+            bumpedRoom <- addSub sub room
+            return $ (bumpedRoom, sub)
 
         -- New user, but name might be taken
         Nothing -> do
             newUser <- tryAddUser (users room) (userName entry)
-            let newRoom = room {users = (newUser : (users room))}
-            let bumpedRoom = bumpSubs currTime 1 newRoom
-            let updatedRooms = Map.insert roomName bumpedRoom rooms
-            return $ (updatedRooms, room, newUser)
+            let roomPlusUser = room {users = (newUser : (users room))}
+            sub <- liftIO $ mkNewSubscription (getChan room) roomName newUser
+            roomPlusSub <- addSub sub roomPlusUser
+            return $ (roomPlusSub, sub)
 
 verifyUser :: User -> [User] -> RoomOp ()
 verifyUser user users =
@@ -203,22 +223,25 @@ eitherFromMaybe :: l -> Maybe r -> Either l r
 eitherFromMaybe l Nothing = Left l
 eitherFromMaybe _ (Just r) = Right r
 
-mkNewSubscription :: Room -> RoomName -> User -> IO RoomSubscription
-mkNewSubscription room name user = do
-    newChan <- Chan.dupChan $ getChan room
+mkNewSubscription :: RoomChan -> RoomName -> User -> IO RoomSubscription
+mkNewSubscription chan name user = do
+    newChan <- Chan.dupChan chan
     return $ RoomSubscription name newChan user
 
-unsubscribeFromRoom :: RoomsService -> RoomName -> IO ()
-unsubscribeFromRoom rs@(RoomsService roomsRef _) roomName = do
-    rooms <- takeMVar $ roomsRef
-    currTime <- Time.getCurrentTime
-    let (_, newRooms) = lookupReplaceInMap roomName (bumpSubs currTime (-1)) rooms
-    void $ putMVar roomsRef newRooms
-    putStrLn "End subscription. Rooms:"
-    putStrLn $ show newRooms
+rmSub :: RoomSubscription -> Room -> RoomOp (Room)
+rmSub sub room = do
+    currTime <- liftIO Time.getCurrentTime
+    let initSubs = getSubs room
+    let uName = RoomsService.name (user sub)
+    let updatedSubs = delete uName initSubs
+    return $ room {getSubs = updatedSubs, lastActive = currTime}
 
-bumpSubs :: UTCTime -> Int -> Room -> Room
-bumpSubs currTime n room = room {getSubs = (getSubs room) + n, lastActive = currTime}
+addSub :: RoomSubscription -> Room -> RoomOp (Room)
+addSub sub room = do
+    currTime <- liftIO Time.getCurrentTime
+    let initSubs = getSubs room
+    let uName = RoomsService.name (user sub)
+    return $ room {getSubs = (uName : initSubs), lastActive = currTime}
 
 roomOpFromMaybe :: RoomsError -> Maybe a -> RoomOp a
 roomOpFromMaybe _ (Just a) = return a
@@ -251,14 +274,14 @@ createRoom rs@(RoomsService roomsRef _) roomName = do
             -- Constantly dump the contents of the new channel
             threadId <- forkIO $ forever $ Chan.readChan newChan
             currentTime <- Time.getCurrentTime
-            return $ Room threadId newChan 0 currentTime []
+            return $ Room threadId newChan [] currentTime []
 
 closeOldRooms :: RoomsService -> IO ()
 closeOldRooms rs@(RoomsService roomsRef _) = do
     rooms <- takeMVar roomsRef
     currTime <- Time.getCurrentTime
     let roomIdle room = Time.diffUTCTime currTime (lastActive room)
-    let isFresh room = (getSubs room > 0) || (roomIdle room < roomMaxIdle)
+    let isFresh room = ((getSubs room) /= []) || (roomIdle room < roomMaxIdle)
     let (freshRooms, oldRooms) = Map.partition isFresh rooms
     putMVar roomsRef freshRooms
     void $ sequence $ endRoom `Map.mapWithKey` oldRooms
