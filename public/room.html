@@ -2,26 +2,37 @@
 <html>
 <head>
     <meta charset="utf-8" />
-    <meta http-equiv="content-language" content="sk" />
+    <meta http-equiv="content-language" content="en-GB" />
     <meta name="format-detection" content="telephone=no"/>
     <meta name="viewport" content="width=1024, user-scalable=yes" />
-    <meta name="robots" content="all,follow" />
-    <script type="text/javascript" src="//ajax.googleapis.com/ajax/libs/jquery/2.0.0/jquery.min.js"></script>
+    <meta name="robots" content="NOINDEX, NOFOLLOW" />
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.4/jquery.min.js"></script>
     <style type="text/css">
         body { padding: 50px; margin: 0; font:normal 12px Arial; color: gray; text-align: center;}
         a { float:left; margin: 0 5px 0 0; font-size: 13px; }
         p { background-color: #F0F0F0; padding: 5px; font:bold 15px Arial; }
         .mb5 { margin-bottom: 5px; }
+        .chat-container { display: none; }
+		.screen-centre-container {
+			position: absolute;
+			top: 50%;
+			left: 50%;
+			transform: translateX(-50%) translateY(-50%);
+		}
     </style>
 </head>
 <body>
-    <div>Select name: <input type="text" name="username" maxlength="20"> <button name="name-submit" />&#x1F44D;</div>
-    <div>
-        <textarea id="output" style="width:620px;height:300px" readonly="readonly"></textarea>
+    <div class="name-input-container screen-centre-container">
+        <div>Select name: <input type="text" name="username" maxlength="20"> <button name="name-submit" />&#x1F44D;</div>
     </div>
-    <div>
-        <input id="input" type="text" name="message" maxlength="200" style="width:500px" />
-        <button name="send">SEND</div>
+    <div class="chat-container screen-centre-container">
+        <div>
+            <textarea id="output" style="width:620px;height:300px" readonly="readonly"></textarea>
+        </div>
+        <div>
+            <input id="input" type="text" name="message" maxlength="200" style="width:500px" />
+            <button name="send">SEND</div>
+        </div>
     </div>
 
     <!-- Adds 'persistentwebsocket' to the global namespace -->
@@ -60,7 +71,7 @@
         function connect(name) {
             if (socket !== null)
                 return;
-            Cookies.set('prev_username', name, {path: window.location.pathname, expires: 1})
+            Cookies.set('prev_username', name, {path: location.pathname, expires: 1})
             socket = new PWS('ws://' + location.host + location.pathname + "?username=" + name,  {
                 initialBackoffDelayMillis: 10000
             });
@@ -70,8 +81,14 @@
             };
             socket.onmessage = function(e) {
                 var o = JSON.parse(e.data);
-                var m = decodeURIComponent(o.message);
-                post(m);
+                if (o.tag === "ChatMessage") {
+                    var m = decodeURIComponent(o.message);
+                    post(m);
+                } else if (o.tag === "UsersMessage") {
+                    onUsersList(o.names);
+                } else {
+                    console.error("Unrecognized message type from server: " + o.tag);
+                }
             };
             socket.onclose = function(e) {
                 console.log('onclose');
@@ -82,6 +99,10 @@
             };
             setConnectionState("connecting");
             socket.open();
+        }
+        function onUsersList(users) {
+            console.log("Users are: ", users);
+
         }
         function send() {
             const input = $("#input").val().trim()

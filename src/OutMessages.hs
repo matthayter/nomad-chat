@@ -13,7 +13,7 @@ import qualified Network.WebSockets as WS
 data OutgoingNomadMessage = ChatMessage {
     message :: Text
 } | UsersMessage {
-    name :: Text
+    names :: [Text]
 } deriving (Generic, Show)
 
 instance ToJSON OutgoingNomadMessage where

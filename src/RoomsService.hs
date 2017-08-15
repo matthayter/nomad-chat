@@ -148,6 +148,7 @@ subscribeToRoom roomEntry =
             let updatedRooms = Map.insert roomName updatedRoom rooms
             -- sub <- liftIO $ mkNewSubscription updatedRoom roomName user
             unlock updatedRooms
+            liftIO $ broadcastMembers updatedRoom
             return sub
     in do
         rooms <- lock
@@ -157,11 +158,11 @@ unsubscribeFromRoom :: RoomSubscription -> RoomName -> RoomOp ()
 unsubscribeFromRoom sub roomName =
     let
         unsubscribeFromRoom' rooms = do
-            currTime <- liftIO $ Time.getCurrentTime
             room <- roomOpFromMaybe RoomDoesNotExist $ Map.lookup roomName rooms
             updatedRoom <- rmSub sub room
             let newRooms = Map.insert roomName updatedRoom rooms
             unlock newRooms
+            liftIO $ broadcastMembers updatedRoom
             liftIO $ putStrLn "End subscription. Rooms:"
             liftIO $ putStrLn $ show newRooms
     in do
@@ -169,6 +170,14 @@ unsubscribeFromRoom sub roomName =
         (unsubscribeFromRoom' rooms) `catchError` (\err -> unlock rooms >> throwError err)
 
 -- addGetUser :: Room -> RoomEntry -> RoomOp (Rooms, Room, User)
+
+broadcastMembers :: Room -> IO ()
+broadcastMembers room =
+    Chan.writeChan chan usersListMsg
+    where
+        chan = getChan room
+        usersListMsg = UsersMessage userNames
+        userNames = getSubs room
 
 addGetUser :: Room -> RoomEntry -> RoomOp (Room, RoomSubscription)
 addGetUser room entry = do
