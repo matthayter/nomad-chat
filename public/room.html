@@ -12,20 +12,38 @@
         a { float:left; margin: 0 5px 0 0; font-size: 13px; }
         p { background-color: #F0F0F0; padding: 5px; font:bold 15px Arial; }
         .mb5 { margin-bottom: 5px; }
-        .chat-container { display: none; }
+        .chat-container {
+            transition: opacity 0.5s linear;
+        }
+        .name-input-container {
+            transition: opacity 0.5s linear;
+        }
+        #name-input {
+            border: none;
+            outline-width: 0;
+            text-align: center;
+        }
 		.screen-centre-container {
 			position: absolute;
 			top: 50%;
 			left: 50%;
 			transform: translateX(-50%) translateY(-50%);
 		}
+        .opacity-hide {
+            opacity: 0;
+        }
+        .display-hide {
+            display: none;
+        }
     </style>
 </head>
 <body>
     <div class="name-input-container screen-centre-container">
-        <div>Select name: <input type="text" name="username" maxlength="20"> <button name="name-submit" />&#x1F44D;</div>
+        <div>
+            <input id="name-input" type="text" placeholder="nickname" name="username" maxlength="20" autofocus>
+        </div>
     </div>
-    <div class="chat-container screen-centre-container">
+    <div class="chat-container screen-centre-container opacity-hide display-hide">
         <div>
             <textarea id="output" style="width:620px;height:300px" readonly="readonly"></textarea>
         </div>
@@ -57,9 +75,37 @@
                 if (this.name === 'open') {
                     return;
                 }
-                if (this.name === 'name-submit') {
-                    connect($('input[name=username]').val());
+            });
+            $("#name-input").keydown(function(e) {
+                // Hitting Enter
+                if (e.keyCode !== 13 ) {
+                    return;
                 }
+                // Disable name input
+                let name = $('input[name=username]').val()
+                $('input[name=username]').prop("disabled", true);
+                connect(name, (connectionResult) => {
+                    if (connectionResult === "success") {
+                        // Hide name input, show chat window
+                        $(".name-input-container").addClass("opacity-hide");
+                        // Hack to make the chat window fade in after the name-input fades-out
+                        setTimeout(() => {
+                            $(".chat-container").removeClass("display-hide");
+                        }, 500);
+                        setTimeout(() => {
+                            $(".chat-container").removeClass("opacity-hide");
+                        }, 510);
+                    } else {
+                        $('input[name=username]').prop("disabled", false);
+                        if (connectionResult.errName === "RoomDoesNotExist") {
+                            // Room not found, please create a new room
+                        } else if (connectionResult.errName === "UserNameTaken") {
+                            // Choose another username
+                        } else if (connectionResult.errName === "IncorrectUserKey") {
+                            // Choose another username
+                        }
+                    }
+                });
             });
             $("#input").keydown(function(e) {
                 // Hitting Enter
@@ -68,7 +114,7 @@
                 }
             })
         });
-        function connect(name) {
+        function connect(name, resultCb) {
             if (socket !== null)
                 return;
             Cookies.set('prev_username', name, {path: location.pathname, expires: 1})
@@ -78,6 +124,10 @@
             socket.onopen = function() {
                 console.log('open');
                 setConnectionState("connected");
+                resultCb("success");
+            };
+            socket.onerror = function(e) {
+                console.log('Error connecting websocket.');
             };
             socket.onmessage = function(e) {
                 var o = JSON.parse(e.data);
