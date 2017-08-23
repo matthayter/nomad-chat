@@ -3,18 +3,19 @@
 <head>
     <meta charset="utf-8" />
     <meta http-equiv="content-language" content="en-GB" />
-    <meta name="format-detection" content="telephone=no"/>
-    <meta name="viewport" content="width=1024, user-scalable=yes" />
+    <!-- <meta name="format-detection" content="telephone=no"/> -->
+    <!-- <meta name="viewport" content="width=1024, user-scalable=yes" /> -->
     <meta name="robots" content="NOINDEX, NOFOLLOW" />
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.4/jquery.min.js"></script>
     <style type="text/css">
-        body { padding: 50px; margin: 0; font:normal 12px Arial; color: gray; text-align: center;}
-        a { float:left; margin: 0 5px 0 0; font-size: 13px; }
-        p { background-color: #F0F0F0; padding: 5px; font:bold 15px Arial; }
-        .mb5 { margin-bottom: 5px; }
-        .chat-container {
-            transition: opacity 0.5s linear;
+        body { 
+            padding: 50px;
+            margin: 0;
+            font:normal 12px Arial;
+            color: gray;
         }
+        a { float:left; margin: 0 5px 0 0; font-size: 13px; }
+        .mb5 { margin-bottom: 5px; }
         .name-input-container {
             transition: opacity 0.5s linear;
         }
@@ -29,6 +30,24 @@
 			left: 50%;
 			transform: translateX(-50%) translateY(-50%);
 		}
+        .chat-container {
+            display: flex;
+            flex-direction: row;
+            justify-content: center;
+            transition: opacity 0.5s linear;
+        }
+        #output {
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+
+            text-align: left;
+            width:620px;
+            height:300px;
+            padding-bottom: 5px;
+            margin-bottom: 5px;
+            border-bottom: 1px solid black;
+        }
         .opacity-hide {
             opacity: 0;
         }
@@ -43,13 +62,16 @@
             <input id="name-input" type="text" placeholder="nickname" name="username" maxlength="20" autofocus>
         </div>
     </div>
-    <div class="chat-container screen-centre-container opacity-hide display-hide">
-        <div>
-            <textarea id="output" style="width:620px;height:300px" readonly="readonly"></textarea>
+    <div class="chat-container opacity-hide display-hide">
+        <div class="messages-container">
+            <!-- Main output box -->
+            <div id="output"></div>
+            <div>
+                <input id="input" type="text" name="message" maxlength="200" placeholder="Type here" style="width:500px" />
+                <!-- <button name="send">SEND -->
+            </div>
         </div>
-        <div>
-            <input id="input" type="text" name="message" maxlength="200" style="width:500px" />
-            <button name="send">SEND</div>
+        <div class="users-list" >
         </div>
     </div>
 
@@ -132,7 +154,7 @@
             socket.onmessage = function(e) {
                 var o = JSON.parse(e.data);
                 if (o.tag === "ChatMessage") {
-                    var m = decodeURIComponent(o.message);
+                    var m = encodeURI(decodeURIComponent(o.message));
                     post(m);
                 } else if (o.tag === "UsersMessage") {
                     onUsersList(o.names);
@@ -151,6 +173,13 @@
             socket.open();
         }
         function onUsersList(users) {
+            $(".users-list").html("");
+            var list = $("<ul></ul>");
+            users.forEach(userName => {
+                list.append( "<li>" + userName);
+            })
+            $(".users-list").append(list);
+
             console.log("Users are: ", users);
 
         }
@@ -175,9 +204,9 @@
             socket.close();
             socket = null;
         }
-        function post(msg) {
+        function post(safeMsg) {
             var el = $('#output');
-            el.val(msg + '\n' + el.val());
+            el.append("<p>" + safeMsg);
         }
         function setConnectionState(stateStr) {
             if (stateStr ===  "connecting") {
