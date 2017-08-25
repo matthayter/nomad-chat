@@ -8,6 +8,9 @@
     <meta name="robots" content="NOINDEX, NOFOLLOW" />
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.4/jquery.min.js"></script>
     <style type="text/css">
+        html, body {
+            height: 100%;
+        }
         body { 
             padding: 50px;
             margin: 0;
@@ -30,10 +33,17 @@
 			left: 50%;
 			transform: translateX(-50%) translateY(-50%);
 		}
+        .vert-centre-container {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
         .chat-container {
             display: flex;
-            flex-direction: row;
-            justify-content: center;
+            flex-direction: column;
+            /* justify-content: center; */
             transition: opacity 0.5s linear;
         }
         #output {
@@ -44,15 +54,55 @@
             text-align: left;
             width:620px;
             height:300px;
-            padding-bottom: 5px;
-            margin-bottom: 5px;
-            border-bottom: 1px solid black;
+            padding-bottom: 10px;
+            border-bottom: 1px dashed #bbb;
+        }
+        #output p {
+            margin-bottom: 0;
+        }
+        #input {
+            outline-width: 0;
+            border: 0;
+            margin-top: 15px;
+        }
+        #input::-webkit-input-placeholder { /* WebKit, Blink, Edge */
+            color:    #aaa;
+        }
+        #input:-moz-placeholder { /* Mozilla Firefox 4 to 18 */
+            color:    #aaa;
+            opacity:  1;
+        }
+        #input::-moz-placeholder { /* Mozilla Firefox 19+ */
+            color:    #aaa;
+            opacity:  1;
+        }
+        #input:-ms-input-placeholder { /* Internet Explorer 10-11 */
+            color:    #aaa;
+        }
+        #input::-ms-input-placeholder { /* Microsoft Edge */
+            color:    #aaa;
+        }
+        .users-list {
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            width: 50px;
+            padding-left: 10px;
+            margin-left: 10px;
+            margin-bottom: 10px;
+            border-left: 1px dashed #bbb;
+        }
+        .users-list p {
+            margin-bottom: 0;
         }
         .opacity-hide {
             opacity: 0;
         }
         .display-hide {
             display: none;
+        }
+        .row {
+            display: flex;
         }
     </style>
 </head>
@@ -62,16 +112,18 @@
             <input id="name-input" type="text" placeholder="nickname" name="username" maxlength="20" autofocus>
         </div>
     </div>
-    <div class="chat-container opacity-hide display-hide">
-        <div class="messages-container">
-            <!-- Main output box -->
-            <div id="output"></div>
+    <div class="vert-centre-container">
+        <div class="chat-container opacity-hide display-hide">
+            <div class="row">
+                <!-- Main output box -->
+                <div id="output"></div>
+                <div class="users-list" >
+                </div>
+            </div>
             <div>
                 <input id="input" type="text" name="message" maxlength="200" placeholder="Type here" style="width:500px" />
                 <!-- <button name="send">SEND -->
             </div>
-        </div>
-        <div class="users-list" >
         </div>
     </div>
 
@@ -174,11 +226,11 @@
         }
         function onUsersList(users) {
             $(".users-list").html("");
-            var list = $("<ul></ul>");
+            var list = $("<div></div>");
             users.forEach(userName => {
-                list.append( "<li>" + userName);
+                list.append( "<p>" + userName);
             })
-            $(".users-list").append(list);
+            $(".users-list").append(list.children());
 
             console.log("Users are: ", users);
 
