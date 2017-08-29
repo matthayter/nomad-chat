@@ -114,7 +114,7 @@
 <body>
     <div class="name-input-container screen-centre-container">
         <div>
-            <input id="name-input" type="text" placeholder="nickname" name="username" maxlength="20" autofocus>
+            <input id="name-input" type="text" placeholder="nickname" name="nickname" maxlength="20" autofocus>
         </div>
     </div>
     <div class="vert-centre-container">
@@ -144,7 +144,7 @@
             setConnectionState("disconnected");
             let prevName = Cookies.get('prev_username');
             if (prevName != null) {
-                $('input[name=username]').val(prevName);
+                $('#name-input').val(prevName);
             }
             $('button').bind('click', function() {
                 if (this.name === 'send') {
@@ -160,9 +160,9 @@
                 if (e.keyCode !== 13 ) {
                     return;
                 }
-                // Disable name input
-                let name = $('input[name=username]').val()
-                $('input[name=username]').prop("disabled", true);
+                let name = $('#name-input').val()
+                $('#name-input').prop("disabled", true);
+
                 connect(name, (connectionResult) => {
                     if (connectionResult === "success") {
                         // Hide name input, show chat window
@@ -175,7 +175,7 @@
                             $(".chat-container").removeClass("opacity-hide");
                         }, 510);
                     } else {
-                        $('input[name=username]').prop("disabled", false);
+                        $('#name-input').prop("disabled", false);
                         if (connectionResult.errName === "RoomDoesNotExist") {
                             // Room not found, please create a new room
                         } else if (connectionResult.errName === "UserNameTaken") {
@@ -206,6 +206,7 @@
                 resultCb("success");
             };
             socket.onerror = function(e) {
+                console.log(e);
                 console.log('Error connecting websocket.');
             };
             socket.onmessage = function(e) {

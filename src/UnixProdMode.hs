@@ -8,8 +8,11 @@ import qualified Web.Scotty as Scotty;
 
 import qualified Data.Default.Class as Default
 import qualified Web.Scotty as Scotty
-import qualified System.Posix.User as User
 import           Network.Wai.Handler.Warp
+
+#ifndef OS_Windows
+import qualified System.Posix.User as User
+#endif
 
 prodModeScotty :: IO ( Scotty.ScottyM () -> IO () )
 

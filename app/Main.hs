@@ -28,6 +28,7 @@ import qualified Data.CaseInsensitive as CI
 import           Data.Maybe (isNothing)
 import           Data.Monoid (mempty, mconcat)
 import qualified Data.Text as T
+import           Data.Text (Text)
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.IO as T.IO
 import qualified Data.Text.Encoding as T.Encoding
@@ -48,9 +49,9 @@ import           System.Exit (die)
 import           System.FilePath ((</>))
 import qualified System.IO as IO
 
-default (T.Text)
+default (Text)
 
-(++) :: T.Text -> T.Text -> T.Text
+(++) :: Text -> Text -> Text
 (++) = T.append
 
 main :: IO ()
@@ -88,7 +89,7 @@ web scotty = do
         wsMiddleware $ (chatMiddleware rooms) `requires` findRoomName 
         middleware $ staticPolicy $ hasPrefix "public/"
 
-findRoomName :: WAI.Request -> Maybe T.Text
+findRoomName :: WAI.Request -> Maybe Text
 findRoomName req =
     case path of
         ("r" : roomName : []) -> Just roomName
@@ -96,7 +97,7 @@ findRoomName req =
     where
         path = WAI.pathInfo req
 
-findUserName :: WAI.Request -> Maybe T.Text
+findUserName :: WAI.Request -> Maybe Text
 findUserName req =
     let 
         textQuery = URI.queryToQueryText $ WAI.queryString req
@@ -112,10 +113,11 @@ findUserKey req = do
 
 chatMiddleware :: RoomsService -> RoomName -> Application -> WAI.Request -> (WAI.Response -> IO WAI.ResponseReceived) -> IO WAI.ResponseReceived
 chatMiddleware rs roomName nextApp req res = do
-    T.IO.putStrLn $ T.append "New WS connection to room: " roomName
+    printT $ mappend "New WS connection to room: " roomName
     let mUserName = findUserName req
         mUserKey = findUserKey req
-        mChatHandler = (return (chatHandlerValidated rs)) `ap` (return roomName) `ap` mUserName `ap` (return mUserKey) `ap` (return wsHandler) `ap` (return res)
+        -- mChatHandler = (return (chatHandlerValidated rs)) `ap` (return roomName) `ap` mUserName `ap` (return mUserKey) `ap` (return wsHandler) `ap` (return res)
+        mChatHandler = (chatHandlerValidated rs) <$> (pure roomName) <*> mUserName <*> pure mUserKey <*> (pure wsHandler) <*> (return res)
     case mChatHandler of
         Just handler -> handler
         Nothing -> res $ WAI.responseLBS badRequest400 [] mempty
@@ -132,7 +134,7 @@ chatHandlerValidated rs roomName userName mNameKey wsHandler res = do
             Right roomSub -> wsHandler roomSub
             Left subError -> do
                 printT $ "Failed to join room: " ++ (showt subError)
-                res $ WAI.responseLBS badRequest400 [] mempty
+                res $ WAI.responseLBS badRequest400 [] "{myerr: \"UserNameTaken\"}"
 
 -- Block on both msgs from the WS connection, and on msgs from the room 'channel'...
 roomWSServerApp :: RoomSubscription -> WS.PendingConnection -> IO ()
@@ -172,11 +174,11 @@ uuidCookie roomName uuid = [(headerName, headerVal)]
             Cookie.setCookiePath = Just $ T.Encoding.encodeUtf8 $ roomPath roomName
         }
 
-roomPath :: RoomName -> T.Text
+roomPath :: RoomName -> Text
 roomPath roomName = "/r/" ++ roomName
 
-userUuidCookieName :: T.Text
+userUuidCookieName :: Text
 userUuidCookieName = "username-uuid"
 
-toCi :: T.Text -> CI.CI BS.ByteString
+toCi :: Text -> CI.CI BS.ByteString
 toCi = CI.mk . T.Encoding.encodeUtf8
