@@ -15,7 +15,6 @@
             padding: 50px;
             margin: 0;
             font:normal 12px Arial;
-            color: gray;
         }
         a { float:left; margin: 0 5px 0 0; font-size: 13px; }
         .mb5 { margin-bottom: 5px; }
@@ -60,27 +59,33 @@
         #output p {
             margin-bottom: 0;
         }
+        #output .system-msg {
+            color: #aaa;
+        }
+        #output .username {
+            color: #aaa;
+        }
         #input {
             outline-width: 0;
             border: 0;
             margin-top: 15px;
         }
         #input::-webkit-input-placeholder { /* WebKit, Blink, Edge */
-            color:    #aaa;
+            color:    #ccc;
         }
         #input:-moz-placeholder { /* Mozilla Firefox 4 to 18 */
-            color:    #aaa;
+            color:    #ccc;
             opacity:  1;
         }
         #input::-moz-placeholder { /* Mozilla Firefox 19+ */
-            color:    #aaa;
+            color:    #ccc;
             opacity:  1;
         }
         #input:-ms-input-placeholder { /* Internet Explorer 10-11 */
-            color:    #aaa;
+            color:    #ccc;
         }
         #input::-ms-input-placeholder { /* Microsoft Edge */
-            color:    #aaa;
+            color:    #ccc;
         }
         .users-list {
             display: flex;
@@ -206,8 +211,7 @@
             socket.onmessage = function(e) {
                 var o = JSON.parse(e.data);
                 if (o.tag === "ChatMessage") {
-                    var m = encodeURI(decodeURIComponent(o.message));
-                    post(m);
+                    onChatMessageReceived(o);
                 } else if (o.tag === "UsersMessage") {
                     onUsersList(o.names);
                 } else {
@@ -228,7 +232,7 @@
             $(".users-list").html("");
             var list = $("<div></div>");
             users.forEach(userName => {
-                list.append( "<p>" + userName);
+                list.append(makeSafeParagraph(userName));
             })
             $(".users-list").append(list.children());
 
@@ -256,17 +260,37 @@
             socket.close();
             socket = null;
         }
-        function post(safeMsg) {
-            var el = $('#output');
-            el.append("<p>" + safeMsg);
+        function onChatMessageReceived(chatMessage) {
+            let unsafeUser = chatMessage.user;
+            let unsafeMsg = decodeURIComponent(chatMessage.message);
+            
+            postChatMsg(unsafeMsg, unsafeUser);
+        }
+        function postChatMsg(unsafeMsg, unsafeUser) {
+            let nameSpan = $("<span/>");
+            nameSpan.append(document.createTextNode(unsafeUser + ": "))
+            nameSpan.addClass('username');
+            let msgP = $("<p>");
+            msgP.append(nameSpan, document.createTextNode(unsafeMsg));
+            $('#output').append(msgP);
+        }
+        function postSysMsg(unsafeMsg) {
+            let node = makeSafeParagraph(unsafeMsg);
+            node.addClass("system-msg");
+            $('#output').append(node);
+        }
+        function makeSafeParagraph(str) {
+            let node = $("<p>");
+            node.append(document.createTextNode(str));
+            return node;
         }
         function setConnectionState(stateStr) {
             if (stateStr ===  "connecting") {
-                post("-- Connecting...");
+                postSysMsg("-- Connecting...");
             } else if (stateStr === "connected") {
-                post("-- Connected");
+                postSysMsg("-- Connected");
             } else if (stateStr === "disconnected") {
-                post("-- Disconnected");
+                postSysMsg("-- Disconnected");
             }
         }
     </script>

@@ -21,6 +21,7 @@ library
                      , UnixProdMode
                      , Messages
                      , OutMessages
+                     , Types
   build-depends:       base >= 4.7 && < 5
                      , aeson
                      , case-insensitive

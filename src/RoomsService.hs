@@ -5,8 +5,6 @@ module RoomsService (
     , RoomSubscription(..)
     , RoomEntry(RoomEntry)
     , RoomName
-    , UserName
-    , User(..)
     , newRoomsService
     , roomExists
     , withRoom
@@ -23,6 +21,7 @@ import           Control.Monad.State.Strict
 import           Messages
 import           OutMessages
 import           TextShow
+import           Types
 
 import           Control.Concurrent (ThreadId, threadDelay, forkIO, killThread)
 import qualified Control.Concurrent.Chan as Chan;
@@ -32,6 +31,7 @@ import           Control.Monad
 import           Data.Char (chr)
 import qualified Data.Map as Map
 import qualified Data.Text as T
+import           Data.Text (Text)
 import qualified Data.Time as Time
 import qualified Data.Time.Format as Time
 import           Data.Time (UTCTime, NominalDiffTime)
@@ -50,15 +50,9 @@ data Room = Room {
     users :: [User]
 }
 
-data User = User {
-    name :: UserName,
-    secretKey :: UUID.UUID
-} deriving (Eq, Show)
-
 type RoomChan = Chan OutgoingNomadMessage
-type RoomName = T.Text
+type RoomName = Text
 type Rooms = Map.Map RoomName Room
-type UserName = T.Text
 data RoomsService = RoomsService (MVar Rooms) (MVar String)
 
 data RoomEntry = RoomEntry {
@@ -87,7 +81,7 @@ instance TextShow RoomsError where
 instance Show Room where
     show room = "Room {" ++ (show $ getSubs room) ++ " subs; activeAt " ++ (Time.formatTime Time.defaultTimeLocale Time.rfc822DateFormat (lastActive room)) ++ "}"
 
-default (T.Text)
+default (Text)
 
 runRoomOp :: RoomsService -> (RoomsError -> b) -> (a -> b) -> RoomOp a -> IO b
 runRoomOp rs err f roomOp = do
@@ -100,7 +94,7 @@ runRoomOp rs err f roomOp = do
 execRoomOp :: RoomsService -> RoomOp a -> IO ()
 execRoomOp rs roomOp = join $ runRoomOp rs (\err -> putStrLn ("RoomOp failed with err: " ++ show err)) (const $ return ()) roomOp
 
-roomExists :: RoomsService -> T.Text -> IO Bool
+roomExists :: RoomsService -> Text -> IO Bool
 roomExists rs roomName = (not . isNothing) `fmap` lookupRoom rs roomName
 
 newRoomsService :: IO RoomsService
@@ -125,7 +119,7 @@ withRoom rs roomEntry f = do
         unsub sub = execRoomOp rs (unsubscribeFromRoom sub roomName)
         roomName = roomEntryRoomName roomEntry
 
-createRandomRoom :: RoomsService -> IO (T.Text, RoomChan)
+createRandomRoom :: RoomsService -> IO (Text, RoomChan)
 createRandomRoom rs@(RoomsService roomsRef randStrRef) = do
     roomName <- randomRoomName randStrRef
     mRoom <- lookupRoom rs roomName
@@ -208,7 +202,7 @@ verifyUser user users =
 
 tryAddUser :: [User] -> UserName -> RoomOp User
 tryAddUser users uName =
-    if any (\u -> RoomsService.name u == uName) users then
+    if any (\u -> Types.name u == uName) users then
         throwError UserNameTaken
     else
         liftIO UUID.V4.nextRandom >>= return . (User uName)
@@ -241,7 +235,7 @@ rmSub :: RoomSubscription -> Room -> RoomOp (Room)
 rmSub sub room = do
     currTime <- liftIO Time.getCurrentTime
     let initSubs = getSubs room
-    let uName = RoomsService.name (user sub)
+    let uName = Types.name (user sub)
     let updatedSubs = delete uName initSubs
     return $ room {getSubs = updatedSubs, lastActive = currTime}
 
@@ -249,25 +243,25 @@ addSub :: RoomSubscription -> Room -> RoomOp (Room)
 addSub sub room = do
     currTime <- liftIO Time.getCurrentTime
     let initSubs = getSubs room
-    let uName = RoomsService.name (user sub)
+    let uName = Types.name (user sub)
     return $ room {getSubs = (uName : initSubs), lastActive = currTime}
 
 roomOpFromMaybe :: RoomsError -> Maybe a -> RoomOp a
 roomOpFromMaybe _ (Just a) = return a
 roomOpFromMaybe err (Nothing) = throwError err
 
-lookupRoom :: RoomsService -> T.Text -> IO (Maybe Room)
+lookupRoom :: RoomsService -> Text -> IO (Maybe Room)
 lookupRoom (RoomsService roomsRef _) roomName = do
     rooms <- readMVar roomsRef
     return $ Map.lookup roomName rooms
 
 -- Return a random string of 7 characters by taking the head of the infinite list given, storing the tail back in the MVar
-randomRoomName :: MVar String -> IO T.Text
+randomRoomName :: MVar String -> IO Text
 randomRoomName infString = do
     randomShortString <- modifyMVar infString (return . swap . (splitAt 7))
     return $ T.pack randomShortString
 
-createRoom :: RoomsService -> T.Text -> IO Room
+createRoom :: RoomsService -> Text -> IO Room
 createRoom rs@(RoomsService roomsRef _) roomName = do
     rooms <- takeMVar roomsRef
     let mRoom = Map.lookup roomName rooms

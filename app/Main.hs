@@ -4,11 +4,12 @@ module Main where
 
 -- Unqualified
 import Lib
-import RoomsService
-import MiddlewareUtil
-import UnixProdMode
 import Messages
+import MiddlewareUtil
 import OutMessages
+import RoomsService
+import Types
+import UnixProdMode
 
 import Prelude hiding ((++))
 import Control.Concurrent.MVar
@@ -139,6 +140,7 @@ roomWSServerApp roomSub p = do
     let personalChan = chan roomSub
     let uuid = secretKey . user $ roomSub
     let rName = roomName roomSub
+    let userName = name . user $ roomSub
     -- Accept request whilst setting a UUID cookie to match the name
     conn <- WS.acceptRequestWith p (WS.defaultAcceptRequest {WS.acceptHeaders = uuidCookie rName uuid})
     -- Heartbeat. Thread dies silently when connections dies / is closed.
@@ -151,7 +153,7 @@ roomWSServerApp roomSub p = do
 
     Left ex <- Ex.try $ forever $ do
         Messages.ChatMessage msg <- WS.receiveData conn
-        Chan.writeChan personalChan (OutMessages.ChatMessage msg)
+        Chan.writeChan personalChan (OutMessages.ChatMessage msg userName)
     case ex of
         WS.CloseRequest _ _ -> putStrLn "WS closed by remote"
         _ -> putStrLn "Other exception: " >> (putStrLn $ show (ex :: WS.ConnectionException))

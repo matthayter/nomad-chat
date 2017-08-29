@@ -1,6 +1,10 @@
 {-# LANGUAGE DeriveGeneric #-}
 
-module OutMessages where
+module OutMessages (
+    OutgoingNomadMessage (ChatMessage, UsersMessage)
+) where
+
+import Types
 
 import Data.Aeson
 import Data.Maybe
@@ -11,7 +15,8 @@ import           Data.Text (Text)
 import qualified Network.WebSockets as WS
 
 data OutgoingNomadMessage = ChatMessage {
-    message :: Text
+    message :: Text,
+    user :: UserName
 } | UsersMessage {
     names :: [Text]
 } deriving (Generic, Show)
