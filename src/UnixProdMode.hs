@@ -5,16 +5,17 @@ module UnixProdMode where
 import           System.Exit (die)
 import qualified Web.Scotty as Scotty;
 
-prodModeScotty :: IO ( Scotty.ScottyM () -> IO () )
-
-#ifdef OS_Windows
-prodModeScotty = die "Production Mode not available on Windows"
-#else
 
 import qualified Data.Default.Class as Default
 import qualified Web.Scotty as Scotty
 import qualified System.Posix.User as User
 import           Network.Wai.Handler.Warp
+
+prodModeScotty :: IO ( Scotty.ScottyM () -> IO () )
+
+#ifdef OS_Windows
+prodModeScotty = die "Production Mode not available on Windows"
+#else
 
 prodModeScotty = return $ Scotty.scottyOpts opts 
     where
