@@ -233,12 +233,14 @@
                     socket = null;
                     if (o.errorMessage === "RoomDoesNotExist") {
                         // Room not found, please create a new room
+                        $("#name-input-error").text("Room closed. Create a new room");
+                        $("#name-input-error").show();
                     } else if (o.errorMessage === "UserNameTaken") {
                         $("#name-input-error").text("Nickname taken. Choose another.");
                         $("#name-input-error").show();
                         $("#name-input").focus();
-                    } else if (o.errorMessage === "IncorrectUserKey") {
-                        // Choose another username
+                    } else {
+                        console.error("Unhandled error from server: ", o.errorMessage);
                     }
                 }
             },
@@ -256,7 +258,7 @@
         }
         function onUsersList(users) {
             $(".users-list").html("");
-            var list = $("<div></div>");
+            var list = $("<div />");
             users.forEach(userName => {
                 list.append(makeSafeParagraph(userName));
             })

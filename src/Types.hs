@@ -11,6 +11,5 @@ data User = User {
 } deriving (Eq, Show)
 
 data RoomsError = UserNameTaken
-                | IncorrectUserKey
                 | RoomDoesNotExist
                 deriving Show

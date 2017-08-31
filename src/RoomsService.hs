@@ -172,36 +172,25 @@ broadcastMembers room =
 addGetUser :: Room -> RoomEntry -> RoomOp (Room, RoomSubscription)
 addGetUser room entry = do
     let roomName = roomEntryRoomName entry
-    case (nameKey entry) of
-        -- Existing user returning
-        Just key -> do
-            let user = User (userName entry) key
-            verifyUser user (users room)
-            sub <- liftIO $ mkNewSubscription (getChan room) roomName user
-            bumpedRoom <- addSub sub room
-            return $ (bumpedRoom, sub)
-
-        -- New user, but name might be taken
+    let uName = userName entry
+    let mExistingUser = find (\u -> name u == uName) (users room)
+    case mExistingUser of
+        Just user -> 
+            if (nameKey entry) == (Just $ secretKey user) then do
+                sub <- liftIO $ mkNewSubscription (getChan room) roomName user
+                bumpedRoom <- addSub sub room
+                return $ (bumpedRoom, sub)
+            else
+                throwError UserNameTaken
         Nothing -> do
-            newUser <- tryAddUser (users room) (userName entry)
+            newUser <- addNewUser (users room) (userName entry)
             let roomPlusUser = room {users = (newUser : (users room))}
             sub <- liftIO $ mkNewSubscription (getChan room) roomName newUser
             roomPlusSub <- addSub sub roomPlusUser
             return $ (roomPlusSub, sub)
 
-verifyUser :: User -> [User] -> RoomOp ()
-verifyUser user users =
-    if elem user users then
-        return ()
-    else
-        throwError IncorrectUserKey
-
-tryAddUser :: [User] -> UserName -> RoomOp User
-tryAddUser users uName =
-    if any (\u -> Types.name u == uName) users then
-        throwError UserNameTaken
-    else
-        liftIO UUID.V4.nextRandom >>= return . (User uName)
+addNewUser :: [User] -> UserName -> RoomOp User
+addNewUser users uName = liftIO UUID.V4.nextRandom >>= return . (User uName)
 
 getRooms :: RoomOp Rooms
 getRooms = do
