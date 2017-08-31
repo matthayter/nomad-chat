@@ -19,10 +19,30 @@ Server setup
 ============
 
 The following was done to initialize the server (TODO: automate this):
-* mkdir /opt/nomad-chat
-* (extract tar.gz into /opt/, make symlink from /opt/nomad-chat to /opt/nomad-chat-0.0.1.0
-* ln -s /opt/nomad-chat/nomad-chat.service /etc/systemd/system/nomad-chat.service
-* sudo adduser --system --no-create-home --group --disabled-password --disabled-login nomad-chat
+
+    mkdir /opt/nomad-chat
+    ln -s /opt/nomad-chat/nomad-chat.service /etc/systemd/system/nomad-chat.service
+    sudo adduser --system --no-create-home --group --disabled-password --disabled-login nomad-chat
+
+Then deploy.
+ 
+Deploy
+======
+
+TODO: Automate this.
+
+* On the build machine:
+```
+    ./build.sh
+    scp build/nomad-chat-1.0.0.0 my-server:~/
+```
+
+* Then on the host
+```
+    cd /opt
+    tar -xf ~/nomad-chat-1.0.0.tar.gz
+    ln -f -s /opt/nomad-chat-1.0.0.0 /opt/nomad-chat
+```
 
 ### License
 
