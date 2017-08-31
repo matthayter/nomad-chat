@@ -10,7 +10,7 @@ This project uses [Stack](https://www.haskellstack.org/).
 ```
 stack setup
 stack build
-stack exec nomad-chat-exe
+stack exec nomad-chat-exe development
 ```
 
 Then direct your web browser at `localhost:3000`
