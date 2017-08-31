@@ -12,13 +12,13 @@
             height: 100%;
         }
         body { 
-            padding: 50px;
             margin: 0;
             font:normal 12px Arial;
         }
         a { float:left; margin: 0 5px 0 0; font-size: 13px; }
         .mb5 { margin-bottom: 5px; }
         .name-input-container {
+            text-align: center;
             transition: opacity 0.5s linear;
         }
         #name-input {
@@ -26,11 +26,16 @@
             outline-width: 0;
             text-align: center;
         }
+        #name-input-error {
+            margin-top: 10px;
+            color: #800
+        }
 		.screen-centre-container {
 			position: absolute;
 			top: 50%;
 			left: 50%;
 			transform: translateX(-50%) translateY(-50%);
+            text-align: center;
 		}
         .vert-centre-container {
             height: 100%;
@@ -112,12 +117,11 @@
     </style>
 </head>
 <body>
-    <div class="name-input-container screen-centre-container">
-        <div>
-            <input id="name-input" type="text" placeholder="nickname" name="nickname" maxlength="20" autofocus>
-        </div>
-    </div>
     <div class="vert-centre-container">
+        <div class="name-input-container">
+            <input id="name-input" type="text" placeholder="nickname" name="nickname" maxlength="20" autofocus>
+            <div id="name-input-error" for="nickname">&nbsp;</div>
+        </div>
         <div class="chat-container opacity-hide display-hide">
             <div class="row">
                 <!-- Main output box -->
@@ -138,10 +142,11 @@
     <script type="text/javascript" src="/public/js/js.cookie.js" ></script>
 
     <script type="text/javascript">
-        var socket = null;
-        var PWS = persistentwebsocket.PersistentWebsocket;
+        let socket = null;
+        let PWS = persistentwebsocket.PersistentWebsocket;
+        let socketHandler = null;
         $(document).ready(function() {
-            setConnectionState("disconnected");
+            showConnectionMessage("disconnected");
             let prevName = Cookies.get('prev_username');
             if (prevName != null) {
                 $('#name-input').val(prevName);
@@ -162,29 +167,7 @@
                 }
                 let name = $('#name-input').val()
                 $('#name-input').prop("disabled", true);
-
-                connect(name, (connectionResult) => {
-                    if (connectionResult === "success") {
-                        // Hide name input, show chat window
-                        $(".name-input-container").addClass("opacity-hide");
-                        // Hack to make the chat window fade in after the name-input fades-out
-                        setTimeout(() => {
-                            $(".chat-container").removeClass("display-hide");
-                        }, 500);
-                        setTimeout(() => {
-                            $(".chat-container").removeClass("opacity-hide");
-                        }, 510);
-                    } else {
-                        $('#name-input').prop("disabled", false);
-                        if (connectionResult.errName === "RoomDoesNotExist") {
-                            // Room not found, please create a new room
-                        } else if (connectionResult.errName === "UserNameTaken") {
-                            // Choose another username
-                        } else if (connectionResult.errName === "IncorrectUserKey") {
-                            // Choose another username
-                        }
-                    }
-                });
+                connect(name);
             });
             $("#input").keydown(function(e) {
                 // Hitting Enter
@@ -193,41 +176,83 @@
                 }
             })
         });
-        function connect(name, resultCb) {
+        function connect(name) {
             if (socket !== null)
                 return;
+            socketHandler = handlers.initialConnection;
             Cookies.set('prev_username', name, {path: location.pathname, expires: 1})
             socket = new PWS('ws://' + location.host + location.pathname + "?username=" + name,  {
                 initialBackoffDelayMillis: 10000
             });
             socket.onopen = function() {
                 console.log('open');
-                setConnectionState("connected");
-                resultCb("success");
             };
             socket.onerror = function(e) {
-                console.log(e);
                 console.log('Error connecting websocket.');
+                console.log(e);
             };
             socket.onmessage = function(e) {
                 var o = JSON.parse(e.data);
-                if (o.tag === "ChatMessage") {
-                    onChatMessageReceived(o);
-                } else if (o.tag === "UsersMessage") {
-                    onUsersList(o.names);
+                // Aeson adds a 'tag' property to indicate the haskell value constructor, e.g. OutMessages.ChatMessage, OutMessages.UsersMessage etc.
+                if (socketHandler[o.tag] == null) {
+                    console.error("Unhandled message type from server: " + o.tag);
                 } else {
-                    console.error("Unrecognized message type from server: " + o.tag);
+                    socketHandler[o.tag](o);
                 }
             };
             socket.onclose = function(e) {
                 console.log('onclose');
-                setConnectionState("disconnected");
+                showConnectionMessage("disconnected");
             };
             socket.onbeforereconnect = function(e) {
-                setConnectionState("connecting");
+                showConnectionMessage("connecting");
             };
-            setConnectionState("connecting");
+            showConnectionMessage("connecting");
             socket.open();
+        }
+        let handlers = {
+            initialConnection: {
+                SubscriptionSuccessfulMessage: function() {
+                    // Move to regular connection open loop
+                    // Hide name input, show chat window
+                    $(".name-input-container").addClass("opacity-hide");
+                    // Hack to make the chat window fade in after the name-input fades-out
+                    setTimeout(() => {
+                        $(".chat-container").removeClass("display-hide");
+                    }, 500);
+                    setTimeout(() => {
+                        $(".chat-container").removeClass("opacity-hide");
+                    }, 510);
+                    socketHandler = handlers.connected;
+                    showConnectionMessage("connected");
+                },
+                ErrorMessage: function(o) {
+                    // Display error message, stop trying to reconnect
+                    $('#name-input').prop("disabled", false);
+                    socket.close();
+                    socket = null;
+                    if (o.errorMessage === "RoomDoesNotExist") {
+                        // Room not found, please create a new room
+                    } else if (o.errorMessage === "UserNameTaken") {
+                        $("#name-input-error").text("Nickname taken. Choose another.");
+                        $("#name-input-error").show();
+                        $("#name-input").focus();
+                    } else if (o.errorMessage === "IncorrectUserKey") {
+                        // Choose another username
+                    }
+                }
+            },
+            connected: {
+                UsersMessage: function (o) {
+                    onUsersList(o.names);
+                },
+                ChatMessage: function onChatMessageReceived(o) {
+                    let unsafeUser = o.chatUser;
+                    let unsafeMsg = decodeURIComponent(o.message);
+                    
+                    postChatMsg(unsafeMsg, unsafeUser);
+                }
+            }
         }
         function onUsersList(users) {
             $(".users-list").html("");
@@ -253,20 +278,6 @@
                 socket.send(JSON.stringify(o));
             }
         }
-        function disconnect() {
-            if (socket === null)
-                return;
-            $('button[name="close"],button[name="send"],button[name="rename"]').attr('disabled', true);
-            $('button[name="open"]').attr('disabled', false);
-            socket.close();
-            socket = null;
-        }
-        function onChatMessageReceived(chatMessage) {
-            let unsafeUser = chatMessage.user;
-            let unsafeMsg = decodeURIComponent(chatMessage.message);
-            
-            postChatMsg(unsafeMsg, unsafeUser);
-        }
         function postChatMsg(unsafeMsg, unsafeUser) {
             let nameSpan = $("<span/>");
             nameSpan.append(document.createTextNode(unsafeUser + ": "))
@@ -285,7 +296,7 @@
             node.append(document.createTextNode(str));
             return node;
         }
-        function setConnectionState(stateStr) {
+        function showConnectionMessage(stateStr) {
             if (stateStr ===  "connecting") {
                 postSysMsg("-- Connecting...");
             } else if (stateStr === "connected") {

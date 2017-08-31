@@ -27,6 +27,8 @@ instance ToJSON IncomingNomadMessage where
 instance FromJSON IncomingNomadMessage
 
 instance WS.WebSocketsData IncomingNomadMessage where
+    fromDataMessage (WS.Text bs _) = WS.fromLazyByteString bs
+    fromDataMessage (WS.Binary bs) = WS.fromLazyByteString bs
     fromLazyByteString bs = fromJust $ decode bs
     toLazyByteString = encode
 

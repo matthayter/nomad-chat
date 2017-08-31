@@ -5,6 +5,7 @@ module RoomsService (
     , RoomSubscription(..)
     , RoomEntry(RoomEntry)
     , RoomName
+    , RoomsError
     , newRoomsService
     , roomExists
     , withRoom
@@ -69,11 +70,6 @@ data RoomSubscription = RoomSubscription {
     chan :: RoomChan,
     user :: User
 }
-
-data RoomsError = UserNameTaken
-                | IncorrectUserKey
-                | RoomDoesNotExist
-                deriving Show
 
 instance TextShow RoomsError where
     showb = fromString . show
@@ -235,7 +231,7 @@ rmSub :: RoomSubscription -> Room -> RoomOp (Room)
 rmSub sub room = do
     currTime <- liftIO Time.getCurrentTime
     let initSubs = getSubs room
-    let uName = Types.name (user sub)
+    let uName = Types.name (RoomsService.user sub)
     let updatedSubs = delete uName initSubs
     return $ room {getSubs = updatedSubs, lastActive = currTime}
 

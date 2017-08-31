@@ -122,35 +122,48 @@ chatMiddleware rs roomName nextApp req res = do
         Just handler -> handler
         Nothing -> res $ WAI.responseLBS badRequest400 [] mempty
     where
-        wsHandler = \roomSub -> WSWai.websocketsOr WS.defaultConnectionOptions (roomWSServerApp roomSub) nextApp req res
+        wsHandler = \eRoomSub -> WSWai.websocketsOr WS.defaultConnectionOptions (roomWSServerApp eRoomSub) nextApp req res
 
 -- Try and subscribe - return appropriate errors and error codes if subscription fails
-chatHandlerValidated :: RoomsService -> RoomName -> UserName -> Maybe UUID.UUID -> (RoomSubscription -> IO WAI.ResponseReceived) -> (WAI.Response -> IO WAI.ResponseReceived) -> IO WAI.ResponseReceived
+chatHandlerValidated :: RoomsService -> RoomName -> UserName -> Maybe UUID.UUID -> ((Either RoomsError RoomSubscription) -> IO WAI.ResponseReceived) -> (WAI.Response -> IO WAI.ResponseReceived) -> IO WAI.ResponseReceived
 chatHandlerValidated rs roomName userName mNameKey wsHandler res = do
     let roomEntry = RoomEntry roomName userName mNameKey
     printT $ "New RoomEntry: " ++ (showt roomEntry)
-    withRoom rs roomEntry $ \eSub ->
-        case eSub of
-            Right roomSub -> wsHandler roomSub
-            Left subError -> do
-                printT $ "Failed to join room: " ++ (showt subError)
-                res $ WAI.responseLBS badRequest400 [] "{myerr: \"UserNameTaken\"}"
+    withRoom rs roomEntry wsHandler
 
--- Block on both msgs from the WS connection, and on msgs from the room 'channel'...
-roomWSServerApp :: RoomSubscription -> WS.PendingConnection -> IO ()
-roomWSServerApp roomSub p = do
-    let personalChan = chan roomSub
-    let uuid = secretKey . user $ roomSub
-    let rName = roomName roomSub
-    let userName = name . user $ roomSub
+roomWSServerApp :: (Either RoomsError RoomSubscription) -> WS.PendingConnection -> IO ()
+roomWSServerApp eSub p = 
+    case eSub of
+        Right roomSub -> roomWSServerAppHappy roomSub p
+        Left subError -> do
+            printT $ "Failed to join room with error: " ++ (showt subError)
+            conn <- WS.acceptRequestWith p WS.defaultAcceptRequest
+            WS.sendTextData conn $ ErrorMessage subError
+            WS.sendClose conn $ ("" :: Text)
+            -- WS.rejectRequestWith p (WS.defaultRejectRequest {WS.rejectCode = 402, WS.rejectHeaders = [(toCi "Content-Type", "application/json")], WS.rejectBody = "{\"test\": \"hi\"}"})
+            Left ex <- Ex.try $ forever $ ((WS.receiveData conn) :: IO Text)
+            case ex of
+                WS.CloseRequest _ _ -> putStrLn "WS closed by server"
+                _ -> putStrLn "Other exception: " >> (putStrLn $ show (ex :: WS.ConnectionException))
+
+
+roomWSServerAppHappy :: RoomSubscription -> WS.PendingConnection -> IO ()
+roomWSServerAppHappy roomSub p = do
+    -- Block on both msgs from the WS connection, and on msgs from the room 'channel'...
+    let 
+        personalChan = chan roomSub
+        rName = roomName roomSub
+        userName = name . user $ roomSub
+        uuid = secretKey . user $ roomSub
     -- Accept request whilst setting a UUID cookie to match the name
     conn <- WS.acceptRequestWith p (WS.defaultAcceptRequest {WS.acceptHeaders = uuidCookie rName uuid})
     -- Heartbeat. Thread dies silently when connections dies / is closed.
     WS.forkPingThread conn 2
+    -- Send successful subscription
+    WS.sendTextData conn OutMessages.SubscriptionSuccessfulMessage 
     -- Push new messages to the client
     outgoingWorkerThread <- forkIO $ forever $ do
         outgoing <- Chan.readChan personalChan
-        -- Replace with 'writeJsonMessage' or similar
         WS.sendTextData conn outgoing
 
     Left ex <- Ex.try $ forever $ do

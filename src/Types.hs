@@ -9,3 +9,8 @@ data User = User {
     name :: UserName,
     secretKey :: UUID.UUID
 } deriving (Eq, Show)
+
+data RoomsError = UserNameTaken
+                | IncorrectUserKey
+                | RoomDoesNotExist
+                deriving Show

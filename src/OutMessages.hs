@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 
 module OutMessages (
-    OutgoingNomadMessage (ChatMessage, UsersMessage)
+    OutgoingNomadMessage (..)
 ) where
 
 import Types
@@ -16,17 +16,23 @@ import qualified Network.WebSockets as WS
 
 data OutgoingNomadMessage = ChatMessage {
     message :: Text,
-    user :: UserName
+    chatUser :: UserName
 } | UsersMessage {
     names :: [Text]
+} | ErrorMessage {
+    errorMessage :: RoomsError
+} | SubscriptionSuccessfulMessage {
 } deriving (Generic, Show)
 
 instance ToJSON OutgoingNomadMessage where
     toEncoding = genericToEncoding defaultOptions
 
+instance ToJSON RoomsError where
+   toJSON = toJSON . show
 -- instance FromJSON OutgoingNomadMessage
 
 instance WS.WebSocketsData OutgoingNomadMessage where
     -- fromLazyByteString bs = fromJust $ decode bs
     fromLazyByteString = undefined
+    fromDataMessage = undefined
     toLazyByteString = encode
