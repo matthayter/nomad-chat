@@ -60,12 +60,12 @@ main = do
     IO.hSetBuffering IO.stdout IO.LineBuffering
     -- Prod or dev mode?
     args <- getArgs
-    let invalidArgs = die "Required first argument: 'production' or 'development'"
-    when (args == []) $ invalidArgs
-    let (envMode : _) = args
+    let invalidArgs = die "Required arguments: 'production' or 'development' and port number"
+    when ((length args) /= 2) $ invalidArgs
+    let (envMode : port : _) = args
     scottyMode <- case envMode of
-        "development" -> return $ Scotty.scotty 3000
-        "production" -> prodModeScotty
+        "development" -> return $ Scotty.scotty (read port)
+        "production" -> prodModeScotty (read port)
         otherwise -> invalidArgs
     web scottyMode
 

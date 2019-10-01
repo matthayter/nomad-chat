@@ -180,8 +180,9 @@
             if (socket !== null)
                 return;
             socketHandler = handlers.initialConnection;
-            Cookies.set('prev_username', name, {path: location.pathname, expires: 1})
-            socket = new PWS('ws://' + location.host + location.pathname + "?username=" + name,  {
+            Cookies.set('prev_username', name, {path: location.pathname, expires: 1});
+            let wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
+            socket = new PWS(wsProtocol + '://' + location.host + location.pathname + "?username=" + name,  {
                 initialBackoffDelayMillis: 10000
             });
             socket.onopen = function() {
