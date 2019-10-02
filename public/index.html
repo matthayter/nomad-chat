@@ -2,36 +2,36 @@
 <html>
 <head>
     <meta charset="utf-8" />
-	<meta http-equiv="content-language" content="en-GB" />
-	<meta name="format-detection" content="telephone=no"/>
-	<meta name="viewport" content="width=1024, user-scalable=yes" />
+    <meta http-equiv="content-language" content="en-GB" />
+    <meta name="format-detection" content="telephone=no"/>
+    <meta name="viewport" content="width=1024, user-scalable=yes" />
     <meta name="robots" content="NOINDEX, NOFOLLOW" />
-    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.4/jquery.min.js"></script>
-	<style type="text/css">
-		body { padding: 50px; margin: 0; font:normal 12px Arial; color: gray }
-		a { float:left; margin: 0 5px 0 0; font-size: 13px; }
-		p { background-color: #F0F0F0; padding: 5px; font:bold 15px Arial; }
-		button { width: 120px; }
-		.mb5 { margin-bottom: 5px; }
-		.main {
-			margin: auto;
-			cursor: pointer;
-		}
-		.main:hover {
-			color: black;
-		}
-		.container {
-			position: absolute;
-			top: 50%;
-			left: 50%;
-			transform: translateX(-50%) translateY(-50%);
-		}
-	</style>
+    <script type="text/javascript" src="/public/js/jquery-2.2.4.min.js" ></script>
+    <style type="text/css">
+        body { padding: 50px; margin: 0; font:normal 12px Arial; color: gray }
+        a { float:left; margin: 0 5px 0 0; font-size: 13px; }
+        p { background-color: #F0F0F0; padding: 5px; font:bold 15px Arial; }
+        button { width: 120px; }
+        .mb5 { margin-bottom: 5px; }
+        .main {
+            margin: auto;
+            cursor: pointer;
+        }
+        .main:hover {
+            color: black;
+        }
+        .container {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translateX(-50%) translateY(-50%);
+        }
+    </style>
 </head>
 <body>
-	<form method="post" action="/newRoom" ></form>
-	<div class="container">
-		<div class="main" onclick="$('form').submit()">new room &#x27A4</div>
-	</div>
+    <form method="post" action="/newRoom" ></form>
+    <div class="container">
+        <div class="main" onclick="$('form').submit()">new room &#x27A4</div>
+    </div>
 </body>
 </html>
